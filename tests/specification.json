@@ -1,0 +1,30 @@
+{
+  "markdown": [
+    {
+      "id": "strong",
+      "markdown": "This text should be **strong**.",
+      "html": "<p>This text should be <strong>strong</strong>.</p>\n",
+      "description": "Strong text"
+    }
+  ],
+  "defined_terms": [
+    {
+      "id": "basic",
+      "markdown": "Joe Smith (defined as \"Joe\")",
+      "html": "<p>Joe Smith (\"<strong>Joe</strong>\")</p>\n",
+      "description": "Basic DTI syntax"
+    },
+    {
+      "id": "multiple_dtis",
+      "markdown": "Big Company LLC (defined as the \"Company\" and, together with Joe, defined as the \"Parties\")",
+      "html": "<p>Big Company LLC (the \"<strong>Company</strong>\" and, together with Joe, the \"<strong>Parties</strong>\")</p>\n",
+      "description": "Multiple DTIs in parentheses from README example"
+    },
+    {
+      "id": "escaped_dti",
+      "markdown": "This is a test (this is \\defined as \"for example\")",
+      "html": "<p>This is a test (this is defined as \"for example\")</p>\n",
+      "description": "Escaped DTI syntax"
+    }
+  ]
+}
