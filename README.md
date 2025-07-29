@@ -25,4 +25,44 @@ klmd examples/simple.klmd simple.html
 
 ## Specification
 
-The specification is in progress.
+_The specification is a work in progress._
+
+### 1. Defined term introductions
+
+Legal documents often define parties, concepts, or other phrases for later reuse. KLMD marks such definitions with a short inline construct that is readable in plain text yet recognisable by software.
+
+A Defined-Term Introduction (DTI) appears inside parentheses, starts with the keyword `defined as`, and binds a quoted term to text that normally precedes it (the referent). 
+
+A renderer MUST NOT display the words `defined as` in the final output.
+
+#### 1.1. Syntax
+
+```markdown
+( ... defined as [descriptor] "<term>" ... )
+```
+- **descriptor** (optional): a single word article or qualifier (e.g., `the`, `a`, `any`, `this`).
+- **"term"**: the defined term, enclosed in straight ASCII double quotes
+- whitespace: at least one space MUST appear after `defined as` and after any descriptor.
+
+Multiple DTIs MAY appear inside a single pair of parentheses.
+
+#### 1.2. Example
+
+```markdown
+This Agreement is by and between Joe Smith (defined as "Joe") and Big Company LLC (defined as the "Company" and, together with Joe, defined as the "Parties").  
+```
+
+This example introduces three defined terms: **Joe**, **Company**, and **Parties**. It renders:
+
+```markdown
+This Agreement is by and between Joe Smith (defined as "Joe") and Big Company LLC (the "Company" and, together with Joe, the "Parties").  
+```
+
+#### 1.3. Processing notes
+
+- **Uniqueness**: Each term MUST be unique within the document. Redefinition SHOULD raise a warning.
+- **Escaping**: Prefix `defined as` with a backslash to prevent parsing as a DTI. The backslash is removed during rendering:
+```markdown
+This is a test (this is \defined as "for example").  
+```
+- **Referent identification**: Not yet standardised. Parsers MAY assume the referent is the text immediately preceding the opening parenthesis until a future revision specifies an explicit rule. 
