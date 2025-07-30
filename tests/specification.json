@@ -1,10 +1,10 @@
 {
   "markdown": [
     {
-      "id": "strong",
-      "markdown": "This text should be **strong**.",
-      "html": "<p>This text should be <strong>strong</strong>.</p>\n",
-      "description": "Strong text"
+      "id": "basic",
+      "markdown": "Hello world!",
+      "html": "<p>Hello world!</p>\n",
+      "description": "Basic markdown processing"
     }
   ],
   "defined_terms": [

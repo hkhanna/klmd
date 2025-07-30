@@ -6,6 +6,8 @@ from typing import Any
 
 import pytest
 
+from klmd.utils import render
+
 
 def run_spec_test(test_case: dict[str, Any], spec_group: str) -> None:
     """Run a specification test case."""
@@ -15,8 +17,7 @@ def run_spec_test(test_case: dict[str, Any], spec_group: str) -> None:
     description = test_case["description"]
 
     # Process markdown with KLMD parser
-    # FIXME: Not implemented yet!
-    actual_html = markdown
+    actual_html = render(markdown)
 
     # Compare actual vs expected output
     # Use pytest's comparison for better error reporting
