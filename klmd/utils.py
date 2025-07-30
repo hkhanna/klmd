@@ -2,6 +2,8 @@
 
 from markdown_it import MarkdownIt
 
+from .features.dti import dti_plugin
+
 
 def render(text: str) -> str:
     """Render KLMD text to HTML.
@@ -12,6 +14,6 @@ def render(text: str) -> str:
     Returns:
         The rendered HTML string.
     """
-    md = MarkdownIt("zero")
+    md = MarkdownIt("commonmark").use(dti_plugin)
     result: str = md.render(text)
     return result
