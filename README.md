@@ -12,6 +12,16 @@ Existing solutions for structuring legal documents are either incomplete, unmain
 
 KLMD is not tied to any specific rendering engine or workflow, making it adaptable to a wide range of legal drafting needs.
 
+Why is this useful?
+- Draft and collaborate on documents with plain text tooling while keeping the functionality of cross refs and automatic section numbering provided by word processors
+- And easy conversion to Word docx so that you can generate it from, say, a bank of your own contract templates and then start working it from there.
+- Plain text is so much better suited to legal documents
+- LLMs can more easily update the drafts and not have to worry about formatting
+- Can be combined with a templating engine and not need to worry about things like numbering changes and crossrefernces.
+
+What's out of scope?
+- Variable substitution. Use a templating engine like Jinja2 for that.
+
 ## Usage
 
 ```bash
@@ -38,7 +48,7 @@ A renderer MUST NOT display the words `defined as` in the final output.
 #### 1.1. Syntax
 
 ```markdown
-( ... defined as [descriptor] "<term>" ... )
+( ... defined as <descriptor> "<term>" ... )
 ```
 - **descriptor** (optional): a single word article or qualifier (e.g., `the`, `a`, `any`, `this`).
 - **"term"**: the defined term, enclosed in straight ASCII double quotes
@@ -52,11 +62,7 @@ Multiple DTIs MAY appear inside a single pair of parentheses.
 This Agreement is by and between Joe Smith (defined as "Joe") and Big Company LLC (defined as the "Company" and, together with Joe, defined as the "Parties").  
 ```
 
-This example introduces three defined terms: **Joe**, **Company**, and **Parties**. It renders:
-
-```markdown
-This Agreement is by and between Joe Smith (defined as "Joe") and Big Company LLC (the "Company" and, together with Joe, the "Parties").  
-```
+This example introduces three defined terms: **Joe**, **Company**, and **Parties**. 
 
 #### 1.3. Processing notes
 
@@ -67,6 +73,44 @@ This is a test (this is \defined as "for example").
 ```
 - **Referent identification**: Not yet standardised. Parsers MAY assume the referent is the text immediately preceding the opening parenthesis until a future revision specifies an explicit rule. 
 
+### 2. Section numbers
+Section numbering. Sections can be with or without titles. 
+
+### 2.1. Hierarchical numbering
+
+The hash must be the first non-whitespace character on the line. There must be at least 1 space between the closing square bracket and the rest of the line.
+
+```code
+[#] This is Section 1.
+[##] This is Section 1.1.
+[#] This is Section 2.
+[##] This is Section 2.1.
+```
+
+Indentation has no effect, so the above is equivalent to: 
+
+```code
+[#] This is Section 1.
+    [##] This is Section 1.1.
+[#] This is Section 2.
+    [##] This is Section 2.1.
+```
+
+Square brackets are familiar to lawyers as text that will not go in the final draft.
+
+### 2.2. Section titles
+
+A section can contain a title. These are often rendered in bold or with an underline.
+
+The title goes within the square brackets after the hash marks.
+
+```code
+[# Section 1 Title] This is Section 1.
+    [##] This is Section 1.1. It does not have a title.
+[#] This is Section 2. It does not have a title.
+    [## Section 2.1 Title] This is Section 2.1.
+```
+
 ## Not yet specified
 
 The below portions of the spec have not yet been specified or implemented. They are placeholders for now.
@@ -75,14 +119,11 @@ The below portions of the spec have not yet been specified or implemented. They 
 Document/exhibit titles
 top level atx with automatic page break?
 
-### 3. Section numbers
-Section numbering. Sections can be with or without titles. 
-
 ### 4. Attachment numbers
 Numbering exhibits and schedules: Exhibit #exhibit / Schedule #schedule
 
 ### 5. Mid-prose numbers
-Mid-paragraph numbering [#]
+Mid-paragraph numbering [\#]
 
 ### 6. Scoped numbers
 Context isolation with Section numbering. E.g., restart numbering in an exhibit.
@@ -100,3 +141,5 @@ myst-directive style syntax
 ### 10. Recitals (e.g., WHEREAS)
 
 ### 11. Tracked changes syntax
+
+### 12. Footnotes
