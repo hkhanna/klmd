@@ -22,6 +22,8 @@ Why is this useful?
 What's out of scope?
 - Variable substitution. Use a templating engine like Jinja2 for that.
 
+Always a balance between what's content and what's presentation. This markup is trying to limit to semantics. Presentation elsewhere. A good metric for if its content vs presentation is can it be represented as a Word style? If so, it's presentation. (Will be tricky with 'signature page to follow').
+
 ## Usage
 
 ```bash
@@ -150,21 +152,25 @@ The reference is case insensitive. For example, both [#intellectual-property] an
 
 
 ### 6. Mid-prose numbers
-Mid-paragraph numbering [\#]
 
-### 7. Comments
-comments - initially free standing
-myst-directive style syntax
-Comments can eventually tie to specific sections of text, perhaps using the cross reference syntax.
+This is for numbering/lettering within a paragraph.
 
-### 8. Footnotes
+```code
+The parties shall [#] negotiate in good faith, [#] be available to one other to consult, and [#] have a great time.
+```
 
-### 9. Signature blocks
-myst-directive style syntax
+Although this syntax mirrors the section numbers, titles are not allowed in mid-prose numbers.
 
 ## Future work
 
 The below portions of the spec have not yet been specified or implemented. They are placeholders for now.
+
+### Comments
+comments - initially free standing
+myst-directive style syntax?
+
+### Signature blocks
+myst-directive style syntax?
 
 ### Reference by Id
 
@@ -180,5 +186,20 @@ Context isolation with Section numbering. E.g., restart numbering in an exhibit.
 ### Recitals (e.g., WHEREAS)
 
 Do these need a separate syntax?
+
+### Mid-prose numbers with automatic conjunctions
+
+The last element will often need a conjunction before the final element (like "and" or "or").  Sometimes we'll want to automatically add a conjunction before the last element rather than writing it in the sentence itself. This is often really useful in combination with a templating engine.
+
+One possible syntax is colons. But we can't just put the colon on the last element because a templating engine might omit that last element.
+
+```code
+The parties shall [#] negotiate in good faith, [#] be available to one other to consult, [and:#] have a great time.
+```
+### Footnotes
+
+### Tying comments to specific parts of the text
+Possibly using cross-reference syntax
+
 
 ### Tracked changes syntax
