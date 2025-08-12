@@ -3,7 +3,7 @@ A flavor of markdown designed for legal drafting.
 
 ## Introduction
 
-The Khanna Law Markdown (KLMD) specification provides a lightweight, human-readable syntax for drafting legal documents such as contracts, legislation, and agreements. KLMD extends standard Markdown with specialized features for legal drafting—without losing the portability and simplicity of plain text.
+The Khanna Law Markdown (KLMD) specification provides a lightweight, human-readable syntax for drafting legal documents such as contracts, legislation, and agreements. KLMD extends standard Markdown with specialized features for legal drafting without losing the portability and simplicity of plain text.
 
 ### Why KLMD?
 

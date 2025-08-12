@@ -51,6 +51,14 @@ class TitleNode(Node):
     children: list[Node]  # Content that follows this title
 
 
+@dataclass
+class CrossReferenceNode(Node):
+    """Represents an inline cross-reference to a section or attachment."""
+    reference_key: str  # Normalized title (lowercase, spaces→hyphens)
+    original_text: str  # Original text for error messages
+    resolved_number: str | None = None  # Filled during resolution
+
+
 class SectionCounter:
     """Manages hierarchical section numbering."""
     
@@ -95,15 +103,48 @@ class AttachmentCounter:
         return self.counter
 
 
+class TitleRegistry:
+    """Tracks all section and attachment titles for cross-reference resolution."""
+    
+    def __init__(self) -> None:
+        self.titles: dict[str, str] = {}  # normalized_title → number
+        self.duplicates: list[str] = []  # Track duplicates for error reporting
+    
+    def _normalize_title(self, title: str) -> str:
+        """Normalize title for case-insensitive matching."""
+        return title.lower().replace(' ', '-')
+    
+    def register(self, title: str, number: str) -> None:
+        """Register a title with its number. Detects duplicates."""
+        if not title:
+            return
+        
+        normalized = self._normalize_title(title)
+        if normalized in self.titles:
+            self.duplicates.append(title)
+        else:
+            self.titles[normalized] = number
+    
+    def resolve(self, reference_key: str) -> str | None:
+        """Resolve a reference key to its number."""
+        return self.titles.get(reference_key.lower())
+    
+    def get_duplicate_errors(self) -> list[str]:
+        """Get list of duplicate title errors."""
+        return [f"Duplicate title: '{title}'" for title in self.duplicates]
+
+
 class KLMDParser:
     """Parser for KLMD syntax."""
     
     SECTION_PATTERN = re.compile(r'^(\s*)\[([#]+)([^\]]*)\]\s*(.*)$')
     ATTACHMENT_PATTERN = re.compile(r'\[#\s*([^\]]*)\]')
+    CROSS_REF_PATTERN = re.compile(r'\[#([^\]]+)\]')
     
     def __init__(self) -> None:
         self.section_counter = SectionCounter()
         self.attachment_counter = AttachmentCounter()
+        self.title_registry = TitleRegistry()
         self.has_document_title = False
     
     def parse(self, text: str) -> DocumentNode:
@@ -168,7 +209,19 @@ class KLMDParser:
             if paragraph:
                 children.append(paragraph)
         
-        return DocumentNode(children=children)
+        # Create document node
+        document = DocumentNode(children=children)
+        
+        # Resolve all cross-references
+        for child in document.children:
+            self._resolve_cross_references(child)
+        
+        # Check for duplicate title errors
+        duplicate_errors = self.title_registry.get_duplicate_errors()
+        if duplicate_errors:
+            raise ValueError(f"Duplicate titles found: {'; '.join(duplicate_errors)}")
+        
+        return document
     
     def _parse_section(self, match: re.Match[str]) -> SectionNode:
         """Parse a section from regex match."""
@@ -181,9 +234,13 @@ class KLMDParser:
         self.section_counter.increment(level)
         number = self.section_counter.get_number(level)
         
-        # For now, treat content as a single text node
+        # Register title for cross-references (if title exists)
+        if title:
+            self.title_registry.register(title, number)
+        
+        # Parse content to handle cross-references
         content_nodes: list[Node] = (
-            [TextNode(text=content.strip())] if content.strip() else []
+            self._parse_text_with_refs(content.strip()) if content.strip() else []
         )
         
         return SectionNode(
@@ -198,12 +255,17 @@ class KLMDParser:
         if not lines:
             return None
         
-        # Join lines with spaces and create a single text node
+        # Join lines with spaces and parse for cross-references
         text = ' '.join(line.strip() for line in lines if line.strip())
         if not text:
             return None
         
-        return ParagraphNode(children=[TextNode(text=text)])
+        # Parse text to handle cross-references
+        children = self._parse_text_with_refs(text)
+        if not children:
+            return None
+        
+        return ParagraphNode(children=children)
     
     def _parse_title_block(self, title_line: str) -> TitleNode:
         """Parse a title line into a TitleNode."""
@@ -234,6 +296,17 @@ class KLMDParser:
         if not is_document_title:
             self.section_counter.reset()
         
+        # Register title for cross-references (for attachments with numbers)
+        if attachment_number is not None:
+            # For now, register with numeric attachment number
+            # Renderer will decide format (A, B, C vs 1, 2, 3)
+            attachment_ref = f"{title} {attachment_number}"
+            self.title_registry.register(title, attachment_ref)
+            
+            # Also register with subtitle if present
+            if subtitle:
+                self.title_registry.register(subtitle, attachment_ref)
+        
         return TitleNode(
             title=title,
             is_document_title=is_document_title,
@@ -246,3 +319,63 @@ class KLMDParser:
         """Check if line is an equals line (3+ equals signs)."""
         stripped = line.strip()
         return len(stripped) >= 3 and all(c == '=' for c in stripped)
+    
+    def _parse_text_with_refs(self, text: str) -> list[Node]:
+        """Parse text content, splitting into TextNode and CrossReferenceNode parts."""
+        if not text.strip():
+            return []
+        
+        nodes: list[Node] = []
+        last_end = 0
+        
+        # Find all cross-reference patterns
+        for match in self.CROSS_REF_PATTERN.finditer(text):
+            start, end = match.span()
+            
+            # Add text before the reference as TextNode
+            if start > last_end:
+                text_content = text[last_end:start]
+                if text_content:
+                    nodes.append(TextNode(text=text_content))
+            
+            # Add the cross-reference as CrossReferenceNode
+            reference_text = match.group(1).strip()
+            reference_key = reference_text.lower().replace(' ', '-')
+            original_text = match.group(0)
+            
+            nodes.append(CrossReferenceNode(
+                reference_key=reference_key,
+                original_text=original_text
+            ))
+            
+            last_end = end
+        
+        # Add remaining text after last reference
+        if last_end < len(text):
+            text_content = text[last_end:]
+            if text_content:
+                nodes.append(TextNode(text=text_content))
+        
+        # If no references found, return single TextNode
+        if not nodes:
+            nodes.append(TextNode(text=text))
+        
+        return nodes
+    
+    def _resolve_cross_references(self, node: Node) -> None:
+        """Recursively resolve all cross-references in the AST."""
+        if isinstance(node, CrossReferenceNode):
+            # Resolve this cross-reference
+            resolved = self.title_registry.resolve(node.reference_key)
+            if resolved:
+                node.resolved_number = resolved
+        
+        # Recursively process children
+        if hasattr(node, 'children') and node.children:
+            for child in node.children:
+                self._resolve_cross_references(child)
+        
+        # Handle SectionNode content
+        if isinstance(node, SectionNode) and node.content:
+            for content_node in node.content:
+                self._resolve_cross_references(content_node)

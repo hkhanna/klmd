@@ -4,6 +4,7 @@ Tests for KLMD parser and AST nodes.
 
 from klmd.parser import (
     AttachmentCounter,
+    CrossReferenceNode,
     DocumentNode,
     KLMDParser,
     ParagraphNode,
@@ -11,6 +12,7 @@ from klmd.parser import (
     SectionNode,
     TextNode,
     TitleNode,
+    TitleRegistry,
 )
 
 
@@ -83,6 +85,55 @@ class TestAttachmentCounter:
         assert counter.increment() == 1
         assert counter.increment() == 2
         assert counter.increment() == 3
+
+
+class TestTitleRegistry:
+    """Test the TitleRegistry helper class."""
+
+    def test_basic_registration_and_resolution(self) -> None:
+        """Test basic title registration and resolution."""
+        registry = TitleRegistry()
+        
+        registry.register("Payment Terms", "2")
+        registry.register("Confidentiality", "1")
+        
+        assert registry.resolve("payment-terms") == "2"
+        assert registry.resolve("confidentiality") == "1"
+        assert registry.resolve("nonexistent") is None
+
+    def test_case_insensitive_matching(self) -> None:
+        """Test case-insensitive title matching."""
+        registry = TitleRegistry()
+        
+        registry.register("Payment Terms", "2")
+        
+        # All these should resolve to the same title
+        assert registry.resolve("payment-terms") == "2"
+        assert registry.resolve("Payment-Terms") == "2"
+        assert registry.resolve("PAYMENT-TERMS") == "2"
+
+    def test_duplicate_detection(self) -> None:
+        """Test duplicate title detection."""
+        registry = TitleRegistry()
+        
+        registry.register("Terms", "1")
+        registry.register("Terms", "2")  # Duplicate
+        
+        errors = registry.get_duplicate_errors()
+        assert len(errors) == 1
+        assert "Terms" in errors[0]
+
+    def test_normalization(self) -> None:
+        """Test title normalization."""
+        registry = TitleRegistry()
+        
+        # Spaces should become hyphens
+        normalized = registry._normalize_title("Payment Terms")
+        assert normalized == "payment-terms"
+        
+        # Mixed case should become lowercase
+        normalized = registry._normalize_title("PAYMENT TERMS")
+        assert normalized == "payment-terms"
 
 
 class TestKLMDParser:
@@ -567,3 +618,163 @@ Exhibit [#]
         assert isinstance(schedule, TitleNode)
         assert schedule.title == "Schedule"
         assert schedule.subtitle == "Terms and Conditions"
+
+    def test_basic_cross_reference_to_section(self) -> None:
+        """Test basic cross-reference to a section title."""
+        parser = KLMDParser()
+        text = """[# Payment Terms] Payment is due within 30 days.
+
+Please refer to Section [#payment-terms] for details."""
+
+        doc = parser.parse(text)
+        
+        # Should have: section, paragraph
+        assert len(doc.children) == 2
+        
+        # Check the paragraph contains cross-reference
+        paragraph = doc.children[1]
+        assert isinstance(paragraph, ParagraphNode)
+        assert len(paragraph.children) == 3  # Text, CrossRef, Text
+        
+        # Check cross-reference node
+        cross_ref = paragraph.children[1]
+        assert isinstance(cross_ref, CrossReferenceNode)
+        assert cross_ref.reference_key == "payment-terms"
+        assert cross_ref.original_text == "[#payment-terms]"
+        assert cross_ref.resolved_number == "1"  # Should resolve to section number
+
+    def test_cross_reference_to_attachment(self) -> None:
+        """Test cross-reference to an attachment title."""
+        parser = KLMDParser()
+        text = """Main Document
+=============
+
+Exhibit [# Terms]
+=================
+
+Please see Exhibit [#terms] for details."""
+
+        doc = parser.parse(text)
+        
+        # Find the paragraph with the cross-reference
+        paragraph = doc.children[2]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Check cross-reference
+        cross_ref = paragraph.children[1]
+        assert isinstance(cross_ref, CrossReferenceNode)
+        assert cross_ref.reference_key == "terms"
+        # Should resolve to attachment reference
+        assert cross_ref.resolved_number == "Exhibit 1"
+
+    def test_multiple_cross_references_in_paragraph(self) -> None:
+        """Test multiple cross-references in the same paragraph."""
+        parser = KLMDParser()
+        text = """[# Terms] General terms and conditions.
+[# Privacy] Privacy policy details.
+
+See Section [#terms] and Section [#privacy] for more info."""
+
+        doc = parser.parse(text)
+        
+        # Check the paragraph with references
+        paragraph = doc.children[2]
+        assert isinstance(paragraph, ParagraphNode)
+        assert len(paragraph.children) == 5  # Text, Ref, Text, Ref, Text
+        
+        # First cross-reference
+        ref1 = paragraph.children[1]
+        assert isinstance(ref1, CrossReferenceNode)
+        assert ref1.reference_key == "terms"
+        assert ref1.resolved_number == "1"
+        
+        # Second cross-reference
+        ref2 = paragraph.children[3]
+        assert isinstance(ref2, CrossReferenceNode)
+        assert ref2.reference_key == "privacy"
+        assert ref2.resolved_number == "2"
+
+    def test_forward_reference(self) -> None:
+        """Test forward reference (reference before definition)."""
+        parser = KLMDParser()
+        text = """See Section [#conclusion] for final thoughts.
+
+[# Conclusion] This is the end of the document."""
+
+        doc = parser.parse(text)
+        
+        # Check forward reference is resolved
+        paragraph = doc.children[0]
+        assert isinstance(paragraph, ParagraphNode)
+        cross_ref = paragraph.children[1]
+        assert isinstance(cross_ref, CrossReferenceNode)
+        assert cross_ref.reference_key == "conclusion"
+        assert cross_ref.resolved_number == "1"
+
+    def test_case_insensitive_cross_references(self) -> None:
+        """Test case-insensitive cross-reference matching."""
+        parser = KLMDParser()
+        text = """[# Payment Terms] Payment details here.
+
+Both [#payment-terms] and [#Payment-Terms] should work."""
+
+        doc = parser.parse(text)
+        
+        paragraph = doc.children[1]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Both references should resolve to the same section
+        ref1 = paragraph.children[1]
+        ref2 = paragraph.children[3]
+        assert isinstance(ref1, CrossReferenceNode)
+        assert isinstance(ref2, CrossReferenceNode)
+        assert ref1.resolved_number == "1"
+        assert ref2.resolved_number == "1"
+
+    def test_unresolved_cross_reference(self) -> None:
+        """Test cross-reference that doesn't resolve to anything."""
+        parser = KLMDParser()
+        text = """[# Payment Terms] Payment details here.
+
+Please see Section [#nonexistent-section] for more info."""
+
+        doc = parser.parse(text)
+        
+        paragraph = doc.children[1]
+        assert isinstance(paragraph, ParagraphNode)
+        cross_ref = paragraph.children[1]
+        assert isinstance(cross_ref, CrossReferenceNode)
+        assert cross_ref.reference_key == "nonexistent-section"
+        assert cross_ref.resolved_number is None  # Should not resolve
+
+    def test_duplicate_title_error(self) -> None:
+        """Test that duplicate titles raise an error."""
+        parser = KLMDParser()
+        text = """[# Payment Terms] First definition.
+[# Payment Terms] Duplicate definition."""
+
+        # Should raise ValueError for duplicate titles
+        try:
+            parser.parse(text)
+            raise AssertionError("Expected ValueError for duplicate titles")
+        except ValueError as e:
+            assert "Duplicate titles found" in str(e)
+            assert "Payment Terms" in str(e)
+
+    def test_cross_reference_in_section_content(self) -> None:
+        """Test cross-reference within section content."""
+        parser = KLMDParser()
+        text = """[# Terms] General terms apply.
+[# Privacy] See Section [#terms] for general provisions."""
+
+        doc = parser.parse(text)
+        
+        # Second section should have cross-reference in its content
+        section2 = doc.children[1]
+        assert isinstance(section2, SectionNode)
+        
+        # Section content should have the cross-reference
+        cross_ref = section2.content[1]  # Content has: Text, CrossRef, Text
+        assert isinstance(cross_ref, CrossReferenceNode)
+        assert cross_ref.reference_key == "terms"
+        assert cross_ref.resolved_number == "1"
