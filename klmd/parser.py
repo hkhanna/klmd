@@ -41,6 +41,16 @@ class DocumentNode(Node):
     children: list[Node]
 
 
+@dataclass
+class TitleNode(Node):
+    """Represents a document or attachment title."""
+    title: str  # Main title text (with [#] removed if present)
+    is_document_title: bool  # True only for first title in document
+    attachment_number: int | None  # Set ONLY if original had [#], None otherwise
+    subtitle: str | None  # Optional text after [#] (e.g., "Pricing Terms")
+    children: list[Node]  # Content that follows this title
+
+
 class SectionCounter:
     """Manages hierarchical section numbering."""
     
@@ -73,23 +83,61 @@ class SectionCounter:
         return ".".join(numbers)
 
 
+class AttachmentCounter:
+    """Manages attachment numbering."""
+    
+    def __init__(self) -> None:
+        self.counter: int = 0
+    
+    def increment(self) -> int:
+        """Increment counter and return new value."""
+        self.counter += 1
+        return self.counter
+
+
 class KLMDParser:
     """Parser for KLMD syntax."""
     
     SECTION_PATTERN = re.compile(r'^(\s*)\[([#]+)([^\]]*)\]\s*(.*)$')
+    ATTACHMENT_PATTERN = re.compile(r'\[#\s*([^\]]*)\]')
     
     def __init__(self) -> None:
         self.section_counter = SectionCounter()
+        self.attachment_counter = AttachmentCounter()
+        self.has_document_title = False
     
     def parse(self, text: str) -> DocumentNode:
         """Parse KLMD text into an AST."""
         lines = text.split('\n')
         children: list[Node] = []
         current_paragraph_lines: list[str] = []
+        i = 0
         
-        for line in lines:
-            section_match = self.SECTION_PATTERN.match(line)
+        while i < len(lines):
+            line = lines[i]
             
+            # Check for title pattern (line followed by equals)
+            if (i + 1 < len(lines) and 
+                line.strip() and 
+                self._is_equals_line(lines[i + 1])):
+                
+                # Finish any pending paragraph
+                if current_paragraph_lines:
+                    paragraph = self._create_paragraph(current_paragraph_lines)
+                    if paragraph:
+                        children.append(paragraph)
+                    current_paragraph_lines = []
+                
+                # Parse title
+                title = self._parse_title_block(line)
+                children.append(title)
+                
+                # Skip the equals line
+                i += 2
+                continue
+            
+            # Check for section pattern
+            section_match = self.SECTION_PATTERN.match(line)
             if section_match:
                 # Finish any pending paragraph
                 if current_paragraph_lines:
@@ -111,6 +159,8 @@ class KLMDParser:
                     if paragraph:
                         children.append(paragraph)
                     current_paragraph_lines = []
+            
+            i += 1
         
         # Finish any remaining paragraph
         if current_paragraph_lines:
@@ -154,3 +204,45 @@ class KLMDParser:
             return None
         
         return ParagraphNode(children=[TextNode(text=text)])
+    
+    def _parse_title_block(self, title_line: str) -> TitleNode:
+        """Parse a title line into a TitleNode."""
+        # Check if this is the first title
+        is_document_title = not self.has_document_title
+        if is_document_title:
+            self.has_document_title = True
+        
+        # Look for [#] pattern in title
+        attachment_match = self.ATTACHMENT_PATTERN.search(title_line)
+        attachment_number = None
+        subtitle = None
+        
+        if attachment_match:
+            subtitle_text = attachment_match.group(1).strip()
+            subtitle = subtitle_text if subtitle_text else None
+            
+            # Remove the [#] pattern from title
+            title = self.ATTACHMENT_PATTERN.sub('', title_line).strip()
+            
+            # Only assign attachment number if this is not a document title
+            if not is_document_title:
+                attachment_number = self.attachment_counter.increment()
+        else:
+            title = title_line.strip()
+        
+        # Reset section counter for all non-document titles
+        if not is_document_title:
+            self.section_counter.reset()
+        
+        return TitleNode(
+            title=title,
+            is_document_title=is_document_title,
+            attachment_number=attachment_number,
+            subtitle=subtitle,
+            children=[]
+        )
+    
+    def _is_equals_line(self, line: str) -> bool:
+        """Check if line is an equals line (3+ equals signs)."""
+        stripped = line.strip()
+        return len(stripped) >= 3 and all(c == '=' for c in stripped)

@@ -3,12 +3,14 @@ Tests for KLMD parser and AST nodes.
 """
 
 from klmd.parser import (
+    AttachmentCounter,
     DocumentNode,
     KLMDParser,
     ParagraphNode,
     SectionCounter,
     SectionNode,
     TextNode,
+    TitleNode,
 )
 
 
@@ -69,6 +71,18 @@ class TestSectionCounter:
         counter.reset()
         counter.increment(1)
         assert counter.get_number(1) == "1"
+
+
+class TestAttachmentCounter:
+    """Test the AttachmentCounter helper class."""
+
+    def test_basic_numbering(self) -> None:
+        """Test basic sequential attachment numbering."""
+        counter = AttachmentCounter()
+
+        assert counter.increment() == 1
+        assert counter.increment() == 2
+        assert counter.increment() == 3
 
 
 class TestKLMDParser:
@@ -310,3 +324,246 @@ This is another paragraph."""
         content_node = section.content[0]
         assert isinstance(content_node, TextNode)
         assert content_node.text == "This has extra whitespace."
+
+    def test_parse_basic_document_title(self) -> None:
+        """Test parsing a basic document title."""
+        parser = KLMDParser()
+        text = """Document Title
+==============
+
+Some content after the title."""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 2
+        assert isinstance(doc.children[0], TitleNode)
+        assert isinstance(doc.children[1], ParagraphNode)
+        
+        title = doc.children[0]
+        assert title.title == "Document Title"
+        assert title.is_document_title is True
+        assert title.attachment_number is None
+        assert title.subtitle is None
+        assert len(title.children) == 0
+
+    def test_parse_attachment_title_without_number(self) -> None:
+        """Test parsing an attachment title without [#]."""
+        parser = KLMDParser()
+        text = """Document Title
+==============
+
+[#] Section 1
+
+Statement of Work
+=================
+
+[#] Attachment section."""
+
+        doc = parser.parse(text)
+        
+        # Should have: doc title, section, attachment title, section
+        assert len(doc.children) == 4
+        
+        doc_title = doc.children[0]
+        assert isinstance(doc_title, TitleNode)
+        assert doc_title.title == "Document Title"
+        assert doc_title.is_document_title is True
+        
+        attachment_title = doc.children[2]
+        assert isinstance(attachment_title, TitleNode)
+        assert attachment_title.title == "Statement of Work"
+        assert attachment_title.is_document_title is False
+        assert attachment_title.attachment_number is None
+        assert attachment_title.subtitle is None
+
+    def test_parse_attachment_with_number_placeholder(self) -> None:
+        """Test parsing an attachment with [#] placeholder."""
+        parser = KLMDParser()
+        text = """Document Title
+==============
+
+Exhibit [#]
+===========
+
+[#] Section in exhibit."""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 3
+        
+        attachment_title = doc.children[1]
+        assert isinstance(attachment_title, TitleNode)
+        assert attachment_title.title == "Exhibit"
+        assert attachment_title.is_document_title is False
+        assert attachment_title.attachment_number == 1
+        assert attachment_title.subtitle is None
+
+    def test_parse_attachment_with_subtitle(self) -> None:
+        """Test parsing an attachment with [# subtitle]."""
+        parser = KLMDParser()
+        text = """Schedule [# Pricing Terms]
+==========================
+
+[#] Base fees."""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 2
+        
+        attachment_title = doc.children[0]
+        assert isinstance(attachment_title, TitleNode)
+        assert attachment_title.title == "Schedule"
+        assert attachment_title.is_document_title is True  # First title
+        # Document titles don't get numbers
+        assert attachment_title.attachment_number is None
+        assert attachment_title.subtitle == "Pricing Terms"
+
+    def test_multiple_attachments_numbering(self) -> None:
+        """Test that multiple attachments get sequential numbers."""
+        parser = KLMDParser()
+        text = """Document
+========
+
+Exhibit [#]
+===========
+
+Schedule [#]
+============
+
+Appendix [# Additional Terms]
+=============================="""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 4
+        
+        # First attachment
+        exhibit = doc.children[1]
+        assert isinstance(exhibit, TitleNode)
+        assert exhibit.title == "Exhibit"
+        assert exhibit.attachment_number == 1
+        
+        # Second attachment  
+        schedule = doc.children[2]
+        assert isinstance(schedule, TitleNode)
+        assert schedule.title == "Schedule"
+        assert schedule.attachment_number == 2
+        
+        # Third attachment
+        appendix = doc.children[3]
+        assert isinstance(appendix, TitleNode)
+        assert appendix.title == "Appendix"
+        assert appendix.attachment_number == 3
+        assert appendix.subtitle == "Additional Terms"
+
+    def test_section_counter_resets_in_attachments(self) -> None:
+        """Test that section numbering resets within attachments."""
+        parser = KLMDParser()
+        text = """Main Document
+=============
+
+[#] Section 1 in main
+[##] Section 1.1 in main
+
+Statement of Work
+=================
+
+[#] Section 1 in SOW (reset)
+[##] Section 1.1 in SOW
+
+Exhibit [#]
+===========
+
+[#] Section 1 in exhibit (reset)"""
+
+        doc = parser.parse(text)
+        
+        # Extract all section nodes
+        sections = [child for child in doc.children if isinstance(child, SectionNode)]
+        
+        assert len(sections) == 5
+        
+        # Main document sections
+        assert sections[0].number == "1"
+        assert sections[1].number == "1.1"
+        
+        # SOW sections (reset)
+        assert sections[2].number == "1"  # Reset to 1
+        assert sections[3].number == "1.1"
+        
+        # Exhibit sections (reset again)
+        assert sections[4].number == "1"  # Reset to 1 again
+
+    def test_title_with_minimum_equals(self) -> None:
+        """Test title with exactly 3 equals signs."""
+        parser = KLMDParser()
+        text = """Title
+===
+
+Content after."""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 2
+        title = doc.children[0]
+        assert isinstance(title, TitleNode)
+        assert title.title == "Title"
+
+    def test_title_with_many_equals(self) -> None:
+        """Test title with many equals signs."""
+        parser = KLMDParser()
+        text = """Title
+===================
+
+Content after."""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 2
+        title = doc.children[0]
+        assert isinstance(title, TitleNode)
+        assert title.title == "Title"
+
+    def test_title_at_end_of_document(self) -> None:
+        """Test title at the end of document with no content after."""
+        parser = KLMDParser()
+        text = """Final Title
+==========="""
+
+        doc = parser.parse(text)
+        
+        assert len(doc.children) == 1
+        title = doc.children[0]
+        assert isinstance(title, TitleNode)
+        assert title.title == "Final Title"
+        assert len(title.children) == 0
+
+    def test_empty_attachment_placeholder(self) -> None:
+        """Test attachment with empty [#] placeholder."""
+        parser = KLMDParser()
+        text = """Document
+========
+
+Exhibit [#]
+==========="""
+
+        doc = parser.parse(text)
+        
+        exhibit = doc.children[1]
+        assert isinstance(exhibit, TitleNode)
+        assert exhibit.title == "Exhibit"
+        assert exhibit.attachment_number == 1
+        assert exhibit.subtitle is None
+
+    def test_whitespace_in_attachment_subtitle(self) -> None:
+        """Test attachment with whitespace in subtitle."""
+        parser = KLMDParser()
+        text = """Schedule [#  Terms and Conditions  ]
+====================================="""
+
+        doc = parser.parse(text)
+        
+        schedule = doc.children[0]
+        assert isinstance(schedule, TitleNode)
+        assert schedule.title == "Schedule"
+        assert schedule.subtitle == "Terms and Conditions"
