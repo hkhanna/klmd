@@ -3,12 +3,10 @@ Tests for KLMD parser and AST nodes.
 """
 
 from klmd.parser import (
-    AttachmentCounter,
     CrossReferenceNode,
     DocumentNode,
     KLMDParser,
     ParagraphNode,
-    SectionCounter,
     SectionNode,
     TextNode,
     TitleNode,
@@ -16,108 +14,37 @@ from klmd.parser import (
 )
 
 
-class TestSectionCounter:
-    """Test the SectionCounter helper class."""
-
-    def test_basic_numbering(self) -> None:
-        """Test basic sequential numbering."""
-        counter = SectionCounter()
-
-        counter.increment(1)
-        assert counter.get_number(1) == "1"
-
-        counter.increment(1)
-        assert counter.get_number(1) == "2"
-
-        counter.increment(1)
-        assert counter.get_number(1) == "3"
-
-    def test_hierarchical_numbering(self) -> None:
-        """Test hierarchical section numbering."""
-        counter = SectionCounter()
-
-        # Level 1 sections
-        counter.increment(1)
-        assert counter.get_number(1) == "1"
-
-        # Level 2 subsections
-        counter.increment(2)
-        assert counter.get_number(2) == "1.1"
-
-        counter.increment(2)
-        assert counter.get_number(2) == "1.2"
-
-        # Level 3 subsection
-        counter.increment(3)
-        assert counter.get_number(3) == "1.2.1"
-
-        # Back to level 2
-        counter.increment(2)
-        assert counter.get_number(2) == "1.3"
-
-        # New level 1 section (resets deeper levels)
-        counter.increment(1)
-        assert counter.get_number(1) == "2"
-
-        counter.increment(2)
-        assert counter.get_number(2) == "2.1"
-
-    def test_reset(self) -> None:
-        """Test counter reset functionality."""
-        counter = SectionCounter()
-
-        counter.increment(1)
-        counter.increment(2)
-        assert counter.get_number(2) == "1.1"
-
-        counter.reset()
-        counter.increment(1)
-        assert counter.get_number(1) == "1"
-
-
-class TestAttachmentCounter:
-    """Test the AttachmentCounter helper class."""
-
-    def test_basic_numbering(self) -> None:
-        """Test basic sequential attachment numbering."""
-        counter = AttachmentCounter()
-
-        assert counter.increment() == 1
-        assert counter.increment() == 2
-        assert counter.increment() == 3
-
-
 class TestTitleRegistry:
     """Test the TitleRegistry helper class."""
 
-    def test_basic_registration_and_resolution(self) -> None:
-        """Test basic title registration and resolution."""
+    def test_basic_registration_and_existence(self) -> None:
+        """Test basic title registration and existence checking."""
         registry = TitleRegistry()
         
-        registry.register("Payment Terms", "2")
-        registry.register("Confidentiality", "1")
+        registry.register("Payment Terms")
+        registry.register("Confidentiality")
         
-        assert registry.resolve("payment-terms") == "2"
-        assert registry.resolve("confidentiality") == "1"
-        assert registry.resolve("nonexistent") is None
+        assert registry.exists("payment-terms") is True
+        assert registry.exists("confidentiality") is True
+        assert registry.exists("nonexistent") is False
 
     def test_case_insensitive_matching(self) -> None:
         """Test case-insensitive title matching."""
         registry = TitleRegistry()
         
-        registry.register("Payment Terms", "2")
+        registry.register("Payment Terms")
         
-        # All these should resolve to the same title
-        assert registry.resolve("payment-terms") == "2"
-        assert registry.resolve("Payment-Terms") == "2"
-        assert registry.resolve("PAYMENT-TERMS") == "2"
+        # All these should match the same title
+        assert registry.exists("payment-terms") is True
+        assert registry.exists("Payment-Terms") is True
+        assert registry.exists("PAYMENT-TERMS") is True
 
     def test_duplicate_detection(self) -> None:
         """Test duplicate title detection."""
         registry = TitleRegistry()
         
-        registry.register("Terms", "1")
-        registry.register("Terms", "2")  # Duplicate
+        registry.register("Terms")
+        registry.register("Terms")  # Duplicate
         
         errors = registry.get_duplicate_errors()
         assert len(errors) == 1
@@ -215,10 +142,9 @@ With another line."""
         assert isinstance(section, SectionNode)
         assert section.level == 1
         assert section.title is None
-        assert section.number == "1"
-        assert len(section.content) == 1
-        assert isinstance(section.content[0], TextNode)
-        content_node = section.content[0]
+        assert len(section.children) == 1
+        assert isinstance(section.children[0], TextNode)
+        content_node = section.children[0]
         assert isinstance(content_node, TextNode)
         assert content_node.text == "This is Section 1."
 
@@ -236,8 +162,7 @@ With another line."""
         assert isinstance(section, SectionNode)
         assert section.level == 1
         assert section.title == "Definitions"
-        assert section.number == "1"
-        content_node = section.content[0]
+        content_node = section.children[0]
         assert isinstance(content_node, TextNode)
         expected_text = "The following terms shall have the meanings set forth below."
         assert content_node.text == expected_text
@@ -254,27 +179,16 @@ With another line."""
 
         doc = parser.parse(text)
 
-        # Should have 5 sections
+        # Should have 6 sections
         sections = [child for child in doc.children if isinstance(child, SectionNode)]
         assert len(sections) == 6
 
-        # Check section numbers
-        assert sections[0].number == "1"
+        # Check section levels
         assert sections[0].level == 1
-
-        assert sections[1].number == "1.1"
         assert sections[1].level == 2
-
-        assert sections[2].number == "1.1.1"
         assert sections[2].level == 3
-
-        assert sections[3].number == "1.2"
         assert sections[3].level == 2
-
-        assert sections[4].number == "2"
         assert sections[4].level == 1
-
-        assert sections[5].number == "2.1"
         assert sections[5].level == 2
 
     def test_parse_titled_sections_example(self) -> None:
@@ -292,21 +206,21 @@ set forth below.
 
         assert len(sections) == 5
 
-        # Check titles and numbers
+        # Check titles and levels
         assert sections[0].title == "Definitions"
-        assert sections[0].number == "1"
+        assert sections[0].level == 1
 
         assert sections[1].title is None
-        assert sections[1].number == "1.1"
+        assert sections[1].level == 2
 
         assert sections[2].title is None
-        assert sections[2].number == "1.2"
+        assert sections[2].level == 2
 
         assert sections[3].title == "Payment Terms"
-        assert sections[3].number == "2"
+        assert sections[3].level == 1
 
         assert sections[4].title == "Late Payments"
-        assert sections[4].number == "2.1"
+        assert sections[4].level == 2
 
     def test_parse_mixed_content(self) -> None:
         """Test parsing mixed sections and paragraphs."""
@@ -335,20 +249,18 @@ This is another paragraph."""
             doc.children[5], ParagraphNode
         )  # "This is another paragraph."
 
-        # Check section numbering
-        assert doc.children[1].number == "1"
-        assert doc.children[3].number == "1.1"
-
         # Check section content (content on same line as section marker)
         section1 = doc.children[1]
         assert isinstance(section1, SectionNode)
-        content1 = section1.content[0]
+        assert section1.level == 1
+        content1 = section1.children[0]
         assert isinstance(content1, TextNode)
         assert content1.text == "First Section"
 
         section2 = doc.children[3]
         assert isinstance(section2, SectionNode)
-        content2 = section2.content[0]
+        assert section2.level == 2
+        content2 = section2.children[0]
         assert isinstance(content2, TextNode)
         assert content2.text == "Subsection"
 
@@ -361,7 +273,7 @@ This is another paragraph."""
         section = doc.children[0]
 
         assert isinstance(section, SectionNode)
-        assert len(section.content) == 0  # No content should be added for empty string
+        assert len(section.children) == 0  # No content should be added for empty string
 
     def test_whitespace_handling(self) -> None:
         """Test that whitespace is handled correctly."""
@@ -372,7 +284,7 @@ This is another paragraph."""
         section = doc.children[0]
 
         assert isinstance(section, SectionNode)
-        content_node = section.content[0]
+        content_node = section.children[0]
         assert isinstance(content_node, TextNode)
         assert content_node.text == "This has extra whitespace."
 
@@ -393,7 +305,7 @@ Some content after the title."""
         title = doc.children[0]
         assert title.title == "Document Title"
         assert title.is_document_title is True
-        assert title.attachment_number is None
+        assert title.has_attachment_placeholder is False
         assert title.subtitle is None
         assert len(title.children) == 0
 
@@ -424,7 +336,7 @@ Statement of Work
         assert isinstance(attachment_title, TitleNode)
         assert attachment_title.title == "Statement of Work"
         assert attachment_title.is_document_title is False
-        assert attachment_title.attachment_number is None
+        assert attachment_title.has_attachment_placeholder is False
         assert attachment_title.subtitle is None
 
     def test_parse_attachment_with_number_placeholder(self) -> None:
@@ -446,7 +358,7 @@ Exhibit [#]
         assert isinstance(attachment_title, TitleNode)
         assert attachment_title.title == "Exhibit"
         assert attachment_title.is_document_title is False
-        assert attachment_title.attachment_number == 1
+        assert attachment_title.has_attachment_placeholder is True
         assert attachment_title.subtitle is None
 
     def test_parse_attachment_with_subtitle(self) -> None:
@@ -465,8 +377,7 @@ Exhibit [#]
         assert isinstance(attachment_title, TitleNode)
         assert attachment_title.title == "Schedule"
         assert attachment_title.is_document_title is True  # First title
-        # Document titles don't get numbers
-        assert attachment_title.attachment_number is None
+        assert attachment_title.has_attachment_placeholder is True
         assert attachment_title.subtitle == "Pricing Terms"
 
     def test_multiple_attachments_numbering(self) -> None:
@@ -492,19 +403,19 @@ Appendix [# Additional Terms]
         exhibit = doc.children[1]
         assert isinstance(exhibit, TitleNode)
         assert exhibit.title == "Exhibit"
-        assert exhibit.attachment_number == 1
+        assert exhibit.has_attachment_placeholder is True
         
         # Second attachment  
         schedule = doc.children[2]
         assert isinstance(schedule, TitleNode)
         assert schedule.title == "Schedule"
-        assert schedule.attachment_number == 2
+        assert schedule.has_attachment_placeholder is True
         
         # Third attachment
         appendix = doc.children[3]
         assert isinstance(appendix, TitleNode)
         assert appendix.title == "Appendix"
-        assert appendix.attachment_number == 3
+        assert appendix.has_attachment_placeholder is True
         assert appendix.subtitle == "Additional Terms"
 
     def test_section_counter_resets_in_attachments(self) -> None:
@@ -534,16 +445,12 @@ Exhibit [#]
         
         assert len(sections) == 5
         
-        # Main document sections
-        assert sections[0].number == "1"
-        assert sections[1].number == "1.1"
-        
-        # SOW sections (reset)
-        assert sections[2].number == "1"  # Reset to 1
-        assert sections[3].number == "1.1"
-        
-        # Exhibit sections (reset again)
-        assert sections[4].number == "1"  # Reset to 1 again
+        # Check section structure (numbering will be handled by renderer)
+        assert sections[0].level == 1  # Main doc section
+        assert sections[1].level == 2  # Main doc subsection
+        assert sections[2].level == 1  # SOW section
+        assert sections[3].level == 2  # SOW subsection
+        assert sections[4].level == 1  # Exhibit section
 
     def test_title_with_minimum_equals(self) -> None:
         """Test title with exactly 3 equals signs."""
@@ -603,7 +510,7 @@ Exhibit [#]
         exhibit = doc.children[1]
         assert isinstance(exhibit, TitleNode)
         assert exhibit.title == "Exhibit"
-        assert exhibit.attachment_number == 1
+        assert exhibit.has_attachment_placeholder is True
         assert exhibit.subtitle is None
 
     def test_whitespace_in_attachment_subtitle(self) -> None:
@@ -617,6 +524,7 @@ Exhibit [#]
         schedule = doc.children[0]
         assert isinstance(schedule, TitleNode)
         assert schedule.title == "Schedule"
+        assert schedule.has_attachment_placeholder is True
         assert schedule.subtitle == "Terms and Conditions"
 
     def test_basic_cross_reference_to_section(self) -> None:
@@ -641,7 +549,6 @@ Please refer to Section [#payment-terms] for details."""
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "payment-terms"
         assert cross_ref.original_text == "[#payment-terms]"
-        assert cross_ref.resolved_number == "1"  # Should resolve to section number
 
     def test_cross_reference_to_attachment(self) -> None:
         """Test cross-reference to an attachment title."""
@@ -664,8 +571,6 @@ Please see Exhibit [#terms] for details."""
         cross_ref = paragraph.children[1]
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "terms"
-        # Should resolve to attachment reference
-        assert cross_ref.resolved_number == "Exhibit 1"
 
     def test_multiple_cross_references_in_paragraph(self) -> None:
         """Test multiple cross-references in the same paragraph."""
@@ -686,13 +591,11 @@ See Section [#terms] and Section [#privacy] for more info."""
         ref1 = paragraph.children[1]
         assert isinstance(ref1, CrossReferenceNode)
         assert ref1.reference_key == "terms"
-        assert ref1.resolved_number == "1"
         
         # Second cross-reference
         ref2 = paragraph.children[3]
         assert isinstance(ref2, CrossReferenceNode)
         assert ref2.reference_key == "privacy"
-        assert ref2.resolved_number == "2"
 
     def test_forward_reference(self) -> None:
         """Test forward reference (reference before definition)."""
@@ -703,13 +606,12 @@ See Section [#terms] and Section [#privacy] for more info."""
 
         doc = parser.parse(text)
         
-        # Check forward reference is resolved
+        # Check forward reference
         paragraph = doc.children[0]
         assert isinstance(paragraph, ParagraphNode)
         cross_ref = paragraph.children[1]
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "conclusion"
-        assert cross_ref.resolved_number == "1"
 
     def test_case_insensitive_cross_references(self) -> None:
         """Test case-insensitive cross-reference matching."""
@@ -723,13 +625,13 @@ Both [#payment-terms] and [#Payment-Terms] should work."""
         paragraph = doc.children[1]
         assert isinstance(paragraph, ParagraphNode)
         
-        # Both references should resolve to the same section
+        # Both references should be parsed correctly
         ref1 = paragraph.children[1]
         ref2 = paragraph.children[3]
         assert isinstance(ref1, CrossReferenceNode)
         assert isinstance(ref2, CrossReferenceNode)
-        assert ref1.resolved_number == "1"
-        assert ref2.resolved_number == "1"
+        assert ref1.reference_key == "payment-terms"
+        assert ref2.reference_key == "payment-terms"
 
     def test_unresolved_cross_reference(self) -> None:
         """Test cross-reference that doesn't resolve to anything."""
@@ -745,7 +647,6 @@ Please see Section [#nonexistent-section] for more info."""
         cross_ref = paragraph.children[1]
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "nonexistent-section"
-        assert cross_ref.resolved_number is None  # Should not resolve
 
     def test_duplicate_title_error(self) -> None:
         """Test that duplicate titles raise an error."""
@@ -774,7 +675,6 @@ Please see Section [#nonexistent-section] for more info."""
         assert isinstance(section2, SectionNode)
         
         # Section content should have the cross-reference
-        cross_ref = section2.content[1]  # Content has: Text, CrossRef, Text
+        cross_ref = section2.children[1]  # Content has: Text, CrossRef, Text
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "terms"
-        assert cross_ref.resolved_number == "1"
