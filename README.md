@@ -52,7 +52,29 @@ klmd examples/simple.klmd simple.html
 
 _The specification is a work in progress._
 
-### 1. Intentionally omitted, for now.
+### 1. Text and paragraphs
+
+KLMD follows standard Markdown conventions for text formatting and paragraph breaks.
+
+#### 1.1. Paragraphs
+
+Consecutive lines of text are joined into a single paragraph. Paragraphs are separated by one or more blank lines.
+
+```markdown
+This is the first paragraph.
+This line is part of the same paragraph.
+
+This is a second paragraph.
+```
+
+**Rendered output:**
+```
+This is the first paragraph. This line is part of the same paragraph.
+
+This is a second paragraph.
+```
+
+This convention allows for natural line wrapping in source documents while maintaining semantic paragraph structure—essential for legal documents where paragraph breaks often have substantive meaning.
 
 ### 2. Section numbers
 
