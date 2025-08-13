@@ -322,3 +322,88 @@ Multi-line comment for longer discussions:
 - **Placement**: Comments can appear anywhere in the document - before titles, within sections, or inline within paragraphs
 - **Nesting**: Block comments (`/* */`) cannot be nested within each other
 
+### 8. Signature blocks
+
+Legal documents require signature blocks that identify the signing parties and their capacity. KLMD provides structured syntax for both individual and entity signatures, including nested entity relationships.
+
+#### 8.1. Syntax
+
+Signature blocks are delimited by horizontal rules with at least three dashes, preceded by a blank line. The party name appears immediately after the horizontal rule, followed by optional metadata fields. The `By:` metadata field has special meaning described below and is case insensitive.
+
+Indentation within signature blocks is optional and ignored by the parser—it serves only to improve readability in the source document.
+
+```markdown
+
+-------------------
+Party Name
+Field Name: Field Value
+Another Field: Another Value
+```
+
+#### 8.2. Individual signatures
+
+Individual signatories require no additional fields beyond the party name. Individual signatories MUST NOT have a `By:` field.
+
+```markdown
+
+-------------------
+John Smith
+
+-------------------
+Jane Doe
+Title: in her individual capacity
+Address: 123 Main Street, New York, NY 10001
+Email: jane@example.com
+```
+
+#### 8.3. Entity signatures
+
+Entity signatures are identified by the presence of a `By:` field, which specifies the human signatory acting on behalf of the entity. Entity signatures MUST contain at least the `By:` field.
+
+```markdown
+
+-------------------
+ABC Corporation
+By: John Smith
+Title: Chief Executive Officer
+
+-------------------
+XYZ LLC
+By: Jane Doe
+Title: Managing Member
+Entity Type: Delaware limited liability company
+Address: 456 Corporate Boulevard, Wilmington, DE 19801
+```
+
+#### 8.4. Nested entity signatures
+
+When an entity signs on behalf of another entity, use multiple `By Entity:` fields to establish the chain of authority. Only one `By:` field is permitted per signature block, identifying the ultimate human signatory.
+
+```markdown
+
+-------------------
+Investment Fund LP
+  By Entity: ABC Management LLC, its General Partner
+    By Entity: XYZ Holdings Inc., its Managing Member
+      By: John Smith
+      Title: President
+Address: 789 Finance Street, New York, NY 10005
+
+-------------------
+Subsidiary Corp
+By Entity: Parent LLC, its sole member
+  By: Jane Doe  
+  Title: Manager
+Phone: (555) 123-4567
+```
+
+The indentation in the above example is optional and purely for readability—both indented and non-indented versions are parsed identically:
+
+#### 8.5. Processing notes
+
+- **Entity detection**: A signature block is treated as an entity signature if it contains a `By:` field
+- **Required fields**: Entity signatures must contain at least one field; individual signatures may have zero fields
+- **Field flexibility**: Any field names may be used beyond the specified `By:` and `By Entity:` fields
+- **Chain validation**: Each `By Entity:` field should specify the relationship (e.g., "its General Partner", "its Managing Member")
+- **Single human signatory**: Only one `By:` field is permitted per signature block
+

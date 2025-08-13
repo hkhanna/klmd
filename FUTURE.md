@@ -2,8 +2,6 @@
 
 The below portions of the spec have not yet been specified or implemented. They are placeholders for now.
 
-### Signature blocks
-myst-directive style syntax?
 
 ### Reference by Id
 
