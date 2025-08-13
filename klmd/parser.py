@@ -11,24 +11,28 @@ from dataclasses import dataclass
 
 class Node:
     """Base class for all AST nodes."""
+
     pass
 
 
 @dataclass
 class TextNode(Node):
     """Represents plain text content."""
+
     text: str
 
 
 @dataclass
 class ParagraphNode(Node):
     """Container for paragraph-level content."""
+
     children: list[Node]
 
 
 @dataclass
 class SectionNode(Node):
     """Represents a numbered section with optional title."""
+
     level: int  # 1 for [#], 2 for [##], etc.
     title: str | None  # Optional title text from within brackets
     children: list[Node]  # Child nodes containing section content
@@ -37,12 +41,14 @@ class SectionNode(Node):
 @dataclass
 class DocumentNode(Node):
     """Root container for the entire document."""
+
     children: list[Node]
 
 
 @dataclass
 class TitleNode(Node):
     """Represents a document or attachment title."""
+
     title: str  # Main title text (with [#] removed if present)
     is_document_title: bool  # True only for first title in document
     has_attachment_placeholder: bool  # True if original had [#] pattern
@@ -53,6 +59,7 @@ class TitleNode(Node):
 @dataclass
 class CrossReferenceNode(Node):
     """Represents an inline cross-reference to a section or attachment."""
+
     reference_key: str  # Normalized title (lowercase, spaces→hyphens)
     original_text: str  # Original text for error messages
 
@@ -60,6 +67,7 @@ class CrossReferenceNode(Node):
 @dataclass
 class DefinedTermNode(Node):
     """Represents a defined term introduction."""
+
     term: str  # The defined term (without quotes)
     descriptor: str | None  # Optional descriptor (e.g., "the", "a")
 
@@ -67,6 +75,7 @@ class DefinedTermNode(Node):
 @dataclass
 class CommentNode(Node):
     """Represents a comment that may or may not be rendered."""
+
     content: str  # The comment text (without delimiters)
     is_inline: bool  # True for inline comments, False for line/block comments
 
@@ -74,6 +83,7 @@ class CommentNode(Node):
 @dataclass
 class SignatureBlockNode(Node):
     """Represents a signature block for legal documents."""
+
     party_name: str  # Name of the signing party
     is_entity: bool  # True if entity (has By: field), False if individual
     by_entities: list[str]  # List of "By Entity:" values (in order)
@@ -83,30 +93,30 @@ class SignatureBlockNode(Node):
 
 class TitleRegistry:
     """Tracks all section and attachment titles for cross-reference validation."""
-    
+
     def __init__(self) -> None:
         self.titles: set[str] = set()  # Set of normalized titles
         self.duplicates: list[str] = []  # Track duplicates for error reporting
-    
+
     def _normalize_title(self, title: str) -> str:
         """Normalize title for case-insensitive matching."""
-        return title.lower().replace(' ', '-')
-    
+        return title.lower().replace(" ", "-")
+
     def register(self, title: str) -> None:
         """Register that a title exists. Detects duplicates."""
         if not title:
             return
-        
+
         normalized = self._normalize_title(title)
         if normalized in self.titles:
             self.duplicates.append(title)
         else:
             self.titles.add(normalized)
-    
+
     def exists(self, reference_key: str) -> bool:
         """Check if a reference key exists."""
         return reference_key.lower() in self.titles
-    
+
     def get_duplicate_errors(self) -> list[str]:
         """Get list of duplicate title errors."""
         return [f"Duplicate title: '{title}'" for title in self.duplicates]
@@ -114,21 +124,21 @@ class TitleRegistry:
 
 class DefinedTermRegistry:
     """Tracks all defined terms for validation."""
-    
+
     def __init__(self) -> None:
         self.terms: set[str] = set()  # Set of defined terms (case-sensitive)
         self.duplicates: list[str] = []  # Track duplicates for error reporting
-    
+
     def register(self, term: str) -> None:
         """Register a defined term. Detects duplicates."""
         if not term:
             return
-        
+
         if term in self.terms:
             self.duplicates.append(term)
         else:
             self.terms.add(term)
-    
+
     def get_duplicate_errors(self) -> list[str]:
         """Get list of duplicate term errors."""
         return [f"Duplicate defined term: '{term}'" for term in self.duplicates]
@@ -136,128 +146,128 @@ class DefinedTermRegistry:
 
 class KLMDParser:
     """Parser for KLMD syntax."""
-    
-    SECTION_PATTERN = re.compile(r'^(\s*)\[([#]+)([^\]]*)\]\s*(.*)$')
-    ATTACHMENT_PATTERN = re.compile(r'\[#\s*([^\]]*)\]')
-    CROSS_REF_PATTERN = re.compile(r'\[#([^\]]+)\]')
+
+    SECTION_PATTERN = re.compile(r"^(\s*)\[([#]+)([^\]]*)\]\s*(.*)$")
+    ATTACHMENT_PATTERN = re.compile(r"\[#\s*([^\]]*)\]")
+    CROSS_REF_PATTERN = re.compile(r"\[#([^\]]+)\]")
     DEFINED_TERM_PATTERN = re.compile(r'defined\s+as\s+(?:(\w+)\s+)?"([^"]+)"')
-    PARENTHETICAL_PATTERN = re.compile(r'\([^)]+\)')
-    LINE_COMMENT_PATTERN = re.compile(r'//(.*)$')
-    BLOCK_COMMENT_PATTERN = re.compile(r'/\*(.*?)\*/', re.DOTALL)
-    SIGNATURE_DASH_PATTERN = re.compile(r'^-{3,}$')  # At least 3 dashes
-    
+    PARENTHETICAL_PATTERN = re.compile(r"\([^)]+\)")
+    LINE_COMMENT_PATTERN = re.compile(r"//(.*)$")
+    BLOCK_COMMENT_PATTERN = re.compile(r"/\*(.*?)\*/", re.DOTALL)
+    SIGNATURE_DASH_PATTERN = re.compile(r"^-{3,}$")  # At least 3 dashes
+
     def __init__(self) -> None:
         self.title_registry = TitleRegistry()
         self.defined_term_registry = DefinedTermRegistry()
         self.has_document_title = False
         self.attachment_count = 0  # Track count for TitleNode metadata
-    
+
     def parse(self, text: str) -> DocumentNode:
         """Parse KLMD text into an AST."""
-        lines = text.split('\n')
-        
+        lines = text.split("\n")
+
         # Phase 1: Build AST
         children = self._parse_lines(lines)
         document = DocumentNode(children=children)
-        
+
         # Phase 2: Validate cross-references
         self._validate_cross_references(document)
-        
+
         # Phase 3: Check for errors
         self._check_for_errors()
-        
+
         return document
-    
+
     def _validate_cross_references(self, document: DocumentNode) -> None:
         """Validate all cross-references in the document."""
         validator = CrossReferenceValidator(self.title_registry)
         for child in document.children:
             validator.visit(child)
-        
+
         # Collect unresolved reference errors
         ref_errors = validator.get_errors()
         if ref_errors:
             # For now, just warn about unresolved references
             # In the future, this could be configurable
             pass  # TODO: Add warning mechanism
-    
+
     def _check_for_errors(self) -> None:
         """Check for parsing errors and raise if any found."""
         duplicate_errors = self.title_registry.get_duplicate_errors()
         term_errors = self.defined_term_registry.get_duplicate_errors()
-        
+
         all_errors = duplicate_errors + term_errors
         if all_errors:
             error_msg = f"Parsing errors: {'; '.join(all_errors)}"
             raise ValueError(error_msg)
-    
+
     def _parse_lines(self, lines: list[str]) -> list[Node]:
         """Parse lines into a list of nodes."""
         children: list[Node] = []
         current_paragraph_lines: list[str] = []
         i = 0
-        
+
         while i < len(lines):
             line = lines[i]
-            
+
             # Check for line comment
             comment_match = self.LINE_COMMENT_PATTERN.match(line.strip())
             if comment_match:
                 # Finish any pending paragraph
                 self._finish_paragraph(current_paragraph_lines, children)
                 current_paragraph_lines = []
-                
+
                 # Parse line comment
                 comment_content = comment_match.group(1).strip()
                 children.append(CommentNode(content=comment_content, is_inline=False))
                 i += 1
                 continue
-            
+
             # Check for block comment starting on this line
-            if line.strip().startswith('/*'):
+            if line.strip().startswith("/*"):
                 # Check if it's a standalone block comment (not mixed with other text)
                 stripped = line.strip()
                 block_match = self.BLOCK_COMMENT_PATTERN.search(stripped)
-                
+
                 if block_match and stripped == block_match.group(0):
                     # Standalone block comment on one line
                     self._finish_paragraph(current_paragraph_lines, children)
                     current_paragraph_lines = []
-                    
+
                     comment_content = block_match.group(1).strip()
-                    children.append(CommentNode(
-                        content=comment_content, is_inline=False
-                    ))
+                    children.append(
+                        CommentNode(content=comment_content, is_inline=False)
+                    )
                     i += 1
                     continue
-                elif '*/' not in line:
+                elif "*/" not in line:
                     # Multi-line block comment starting
                     self._finish_paragraph(current_paragraph_lines, children)
                     current_paragraph_lines = []
-                    
+
                     # Collect all lines until we find the closing */
                     comment_lines = []
                     j = i
                     block_complete = False
-                    
+
                     while j < len(lines):
                         current_line = lines[j]
                         comment_lines.append(current_line)
-                        if '*/' in current_line:
+                        if "*/" in current_line:
                             block_complete = True
                             break
                         j += 1
-                    
+
                     if block_complete:
                         # Parse the multi-line block comment
-                        full_text = '\n'.join(comment_lines)
+                        full_text = "\n".join(comment_lines)
                         block_match = self.BLOCK_COMMENT_PATTERN.search(full_text)
                         if block_match:
                             comment_content = block_match.group(1).strip()
-                            children.append(CommentNode(
-                                content=comment_content, is_inline=False
-                            ))
-                        
+                            children.append(
+                                CommentNode(content=comment_content, is_inline=False)
+                            )
+
                         i = j + 1
                         continue
                     else:
@@ -265,48 +275,52 @@ class KLMDParser:
                         current_paragraph_lines.extend(comment_lines)
                         i = j + 1
                         continue
-            
+
             # Check for title pattern (line followed by equals)
-            if (i + 1 < len(lines) and 
-                line.strip() and 
-                self._is_equals_line(lines[i + 1])):
-                
+            if (
+                i + 1 < len(lines)
+                and line.strip()
+                and self._is_equals_line(lines[i + 1])
+            ):
                 # Finish any pending paragraph
                 self._finish_paragraph(current_paragraph_lines, children)
                 current_paragraph_lines = []
-                
+
                 # Parse title
                 title = self._parse_title_block(line)
                 children.append(title)
-                
+
                 # Skip the equals line
                 i += 2
                 continue
-            
+
             # Check for signature block pattern (blank line + dash line)
-            if (i > 0 and not lines[i - 1].strip() and 
-                self._is_dash_line(line) and
-                i + 1 < len(lines) and lines[i + 1].strip()):
-                
+            if (
+                i > 0
+                and not lines[i - 1].strip()
+                and self._is_dash_line(line)
+                and i + 1 < len(lines)
+                and lines[i + 1].strip()
+            ):
                 # Finish any pending paragraph
                 self._finish_paragraph(current_paragraph_lines, children)
                 current_paragraph_lines = []
-                
+
                 # Parse signature block
                 signature_block, next_i = self._parse_signature_block(lines, i)
                 children.append(signature_block)
-                
+
                 # Move to next unparsed line
                 i = next_i
                 continue
-            
+
             # Check for section pattern
             section_match = self.SECTION_PATTERN.match(line)
             if section_match:
                 # Finish any pending paragraph
                 self._finish_paragraph(current_paragraph_lines, children)
                 current_paragraph_lines = []
-                
+
                 # Parse section
                 section = self._parse_section(section_match)
                 children.append(section)
@@ -318,14 +332,14 @@ class KLMDParser:
                     # Empty line ends paragraph
                     self._finish_paragraph(current_paragraph_lines, children)
                     current_paragraph_lines = []
-            
+
             i += 1
-        
+
         # Finish any remaining paragraph
         self._finish_paragraph(current_paragraph_lines, children)
-        
+
         return children
-    
+
     def _finish_paragraph(
         self, paragraph_lines: list[str], children: list[Node]
     ) -> None:
@@ -334,83 +348,79 @@ class KLMDParser:
             paragraph = self._create_paragraph(paragraph_lines)
             if paragraph:
                 children.append(paragraph)
-    
+
     def _parse_section(self, match: re.Match[str]) -> SectionNode:
         """Parse a section from regex match."""
         _, hashes, title_text, content = match.groups()
-        
+
         level = len(hashes)
         title = title_text.strip() if title_text.strip() else None
-        
+
         # Register title for cross-reference validation (if title exists)
         if title:
             self.title_registry.register(title)
-        
+
         # Parse content to handle cross-references
         content_nodes: list[Node] = (
             self._parse_text_with_refs(content.strip()) if content.strip() else []
         )
-        
-        return SectionNode(
-            level=level,
-            title=title,
-            children=content_nodes
-        )
-    
+
+        return SectionNode(level=level, title=title, children=content_nodes)
+
     def _create_paragraph(self, lines: list[str]) -> ParagraphNode | None:
         """Create a paragraph node from lines of text."""
         if not lines:
             return None
-        
+
         # Join lines with spaces and parse for cross-references
-        text = ' '.join(line.strip() for line in lines if line.strip())
+        text = " ".join(line.strip() for line in lines if line.strip())
         if not text:
             return None
-        
+
         # Parse text to handle cross-references
         children = self._parse_text_with_refs(text)
         if not children:
             return None
-        
+
         return ParagraphNode(children=children)
-    
+
     def _parse_title_block(self, title_line: str) -> TitleNode:
         """Parse a title line into a TitleNode."""
         # Check if this is the first title
         is_document_title = not self.has_document_title
         if is_document_title:
             self.has_document_title = True
-        
+
         # Look for [#] pattern in title
         attachment_match = self.ATTACHMENT_PATTERN.search(title_line)
         has_attachment_placeholder = attachment_match is not None
         subtitle = None
-        
+
         if attachment_match:
             subtitle_text = attachment_match.group(1).strip()
             subtitle = subtitle_text if subtitle_text else None
-            
+
             # Remove the [#] pattern from title
-            title = self.ATTACHMENT_PATTERN.sub('', title_line).strip()
+            title = self.ATTACHMENT_PATTERN.sub("", title_line).strip()
         else:
             title = title_line.strip()
-        
+
         # Register title for cross-reference validation
         if title:
             self.title_registry.register(title)
-        
+
         # Also register subtitle if present
         if subtitle:
             self.title_registry.register(subtitle)
-        
+
         return TitleNode(
             title=title,
             is_document_title=is_document_title,
             has_attachment_placeholder=has_attachment_placeholder,
             subtitle=subtitle,
-            children=[]
+            children=[],
         )
-    
+
     def _parse_signature_block(
         self, lines: list[str], dash_line_idx: int
     ) -> tuple[SignatureBlockNode, int]:
@@ -420,49 +430,53 @@ class KLMDParser:
         """
         # Get party name from line after dashes
         party_name = lines[dash_line_idx + 1].strip()
-        
+
         # Parse metadata fields
         fields: dict[str, str] = {}
         by_entities: list[str] = []
         signatory: str | None = None
         by_field_count = 0
-        
+
         i = dash_line_idx + 2  # Start after party name line
-        
+
         while i < len(lines):
             line = lines[i]
-            
+
             # Stop if we hit another signature block (blank + dash)
-            if (not line.strip() and 
-                i + 1 < len(lines) and 
-                self._is_dash_line(lines[i + 1])):
+            if (
+                not line.strip()
+                and i + 1 < len(lines)
+                and self._is_dash_line(lines[i + 1])
+            ):
                 break
-            
+
             # Stop if we hit a section
             if self.SECTION_PATTERN.match(line):
                 break
-            
+
             # Stop if we hit a title block (line + equals)
-            if (i + 1 < len(lines) and 
-                line.strip() and 
-                self._is_equals_line(lines[i + 1])):
+            if (
+                i + 1 < len(lines)
+                and line.strip()
+                and self._is_equals_line(lines[i + 1])
+            ):
                 break
-            
+
             # Skip empty lines
             if not line.strip():
                 i += 1
                 continue
-            
+
             # Parse field line
             stripped = line.strip()
-            if ':' in stripped:
-                key, value = stripped.split(':', 1)
+            if ":" in stripped:
+                key, value = stripped.split(":", 1)
                 key = key.strip()
                 value = value.strip()
-                
+
                 # Handle special fields (case-insensitive)
                 key_lower = key.lower()
-                if key_lower == 'by':
+                if key_lower == "by":
                     by_field_count += 1
                     if by_field_count > 1:
                         raise ValueError(
@@ -470,172 +484,173 @@ class KLMDParser:
                             f"for '{party_name}'"
                         )
                     signatory = value
-                elif key_lower == 'by entity':
+                elif key_lower == "by entity":
                     by_entities.append(value)
                 else:
                     # Store other fields as-is
                     fields[key] = value
-            
+
             i += 1
-        
+
         # Determine if this is an entity signature
         is_entity = signatory is not None
-        
+
         # Validate entity signatures have at least one field (the By: field)
         if is_entity and by_field_count == 0:
             raise ValueError(
                 f"Entity signature for '{party_name}' missing required 'By:' field"
             )
-        
+
         return SignatureBlockNode(
             party_name=party_name,
             is_entity=is_entity,
             by_entities=by_entities,
             signatory=signatory,
-            fields=fields
+            fields=fields,
         ), i
-    
+
     def _is_equals_line(self, line: str) -> bool:
         """Check if line is an equals line (3+ equals signs)."""
         stripped = line.strip()
-        return len(stripped) >= 3 and all(c == '=' for c in stripped)
-    
+        return len(stripped) >= 3 and all(c == "=" for c in stripped)
+
     def _is_dash_line(self, line: str) -> bool:
         """Check if line is a dash line (3+ dashes)."""
         return bool(self.SIGNATURE_DASH_PATTERN.match(line.strip()))
-    
+
     def _parse_text_with_refs(self, text: str) -> list[Node]:
         """Parse text content, splitting into various node types."""
         if not text.strip():
             return []
-        
+
         return self._parse_text_content(text)
-    
+
     def _parse_text_content(self, text: str) -> list[Node]:
         """Parse text content handling cross-refs, parentheticals, and comments."""
         nodes: list[Node] = []
         pos = 0
-        
+
         while pos < len(text):
             # Look for the next special construct
             next_cross_ref = self.CROSS_REF_PATTERN.search(text, pos)
             next_parenthetical = self.PARENTHETICAL_PATTERN.search(text, pos)
             next_block_comment = self.BLOCK_COMMENT_PATTERN.search(text, pos)
-            
+
             # Determine which comes first
             next_special = None
             next_pos = len(text)
-            
+
             if next_cross_ref and next_cross_ref.start() < next_pos:
                 next_pos = next_cross_ref.start()
-                next_special = 'cross_ref'
-            
+                next_special = "cross_ref"
+
             if next_parenthetical and next_parenthetical.start() < next_pos:
                 next_pos = next_parenthetical.start()
-                next_special = 'parenthetical'
-            
+                next_special = "parenthetical"
+
             if next_block_comment and next_block_comment.start() < next_pos:
                 next_pos = next_block_comment.start()
-                next_special = 'block_comment'
-            
+                next_special = "block_comment"
+
             # Add text before next special construct (if any)
             if next_pos > pos:
                 text_content = text[pos:next_pos]
                 if text_content:
                     nodes.append(TextNode(text=text_content))
-            
+
             # Handle the special construct if found
-            if next_special == 'cross_ref' and next_cross_ref:
+            if next_special == "cross_ref" and next_cross_ref:
                 nodes.append(self._parse_cross_reference(next_cross_ref))
                 pos = next_cross_ref.end()
-            elif next_special == 'parenthetical' and next_parenthetical:
+            elif next_special == "parenthetical" and next_parenthetical:
                 paren_nodes = self._parse_parenthetical_content(next_parenthetical)
                 nodes.extend(paren_nodes)
                 pos = next_parenthetical.end()
-            elif next_special == 'block_comment' and next_block_comment:
+            elif next_special == "block_comment" and next_block_comment:
                 comment_content = next_block_comment.group(1).strip()
                 nodes.append(CommentNode(content=comment_content, is_inline=True))
                 pos = next_block_comment.end()
             else:
                 # No more special constructs found, we're done
                 break
-        
+
         # If no nodes were created, the text has no special constructs
         if not nodes:
             return [TextNode(text=text)]
-        
+
         return nodes
-    
+
     def _parse_cross_reference(self, match: re.Match[str]) -> CrossReferenceNode:
         """Parse a cross-reference from regex match."""
         reference_text = match.group(1).strip()
-        reference_key = reference_text.lower().replace(' ', '-')
+        reference_key = reference_text.lower().replace(" ", "-")
         original_text = match.group(0)
-        
+
         return CrossReferenceNode(
-            reference_key=reference_key,
-            original_text=original_text
+            reference_key=reference_key, original_text=original_text
         )
-    
+
     def _parse_parenthetical_content(self, match: re.Match[str]) -> list[Node]:
         """Parse parenthetical content, extracting defined terms directly."""
         full_content = match.group(0)  # e.g., "(defined as the "Company" and...)"
         inner_content = full_content[1:-1]  # Remove outer parentheses
-        
+
         # Check if this parenthetical contains any defined terms
         if not self.DEFINED_TERM_PATTERN.search(inner_content):
             # No defined terms, treat as regular text
             return [TextNode(text=full_content)]
-        
+
         # Parse the content for defined terms
         nodes: list[Node] = []
         pos = 0
-        
+
         for match in self.DEFINED_TERM_PATTERN.finditer(inner_content):
             start, end = match.span()
-            
+
             # Add text before the defined term (if any)
             if start > pos:
                 text_before = inner_content[pos:start]
                 if text_before.strip():  # Only add non-whitespace text
                     nodes.append(TextNode(text=text_before))
-            
+
             # Extract and register the defined term
             descriptor = match.group(1)  # Optional descriptor
             term = match.group(2)  # Required term
-            
+
             self.defined_term_registry.register(term)
             nodes.append(DefinedTermNode(term=term, descriptor=descriptor))
-            
+
             pos = end
-        
+
         # Add any remaining text after the last defined term
         if pos < len(inner_content):
             remaining = inner_content[pos:]
             if remaining.strip():  # Only add non-whitespace text
                 nodes.append(TextNode(text=remaining))
-        
+
         return nodes
-    
+
+
 class CrossReferenceValidator:
     """Visitor for validating cross-references in the AST."""
-    
+
     def __init__(self, title_registry: TitleRegistry) -> None:
         self.title_registry = title_registry
         self.unresolved_refs: list[str] = []
-    
+
     def visit(self, node: Node) -> None:
         """Visit a node and all its children."""
-        if (isinstance(node, CrossReferenceNode) 
-            and not self.title_registry.exists(node.reference_key)):
+        if isinstance(node, CrossReferenceNode) and not self.title_registry.exists(
+            node.reference_key
+        ):
             error_msg = f"Unresolved reference: {node.original_text}"
             self.unresolved_refs.append(error_msg)
-        
+
         # Visit children
-        if hasattr(node, 'children') and node.children:
+        if hasattr(node, "children") and node.children:
             for child in node.children:
                 self.visit(child)
-    
+
     def get_errors(self) -> list[str]:
         """Get list of unresolved reference errors."""
         return self.unresolved_refs.copy()
