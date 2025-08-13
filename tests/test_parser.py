@@ -11,6 +11,7 @@ from klmd.parser import (
     KLMDParser,
     ParagraphNode,
     SectionNode,
+    SignatureBlockNode,
     TextNode,
     TitleNode,
     TitleRegistry,
@@ -877,7 +878,8 @@ Joe Smith (defined as "Joe") agrees to the terms in Section [#payment-terms]."""
     def test_inline_block_comment(self) -> None:
         """Test parsing inline block comments."""
         parser = KLMDParser()
-        text = 'The Vendor /*ABC Corp or subsidiary*/ shall deliver by /*confirm date*/ December 31.'
+        text = ('The Vendor /*ABC Corp or subsidiary*/ shall deliver '
+               'by /*confirm date*/ December 31.')
 
         doc = parser.parse(text)
         
@@ -999,7 +1001,8 @@ Joe Smith /*legal name*/ (defined as "Joe") agrees to Section /*see above*/ [#pa
         paragraph = doc.children[2]
         assert isinstance(paragraph, ParagraphNode)
         
-        # Should have: Text, Comment, Text, DefinedTerm, Text, Comment, Text, CrossRef, Text
+        # Should have: Text, Comment, Text, DefinedTerm, Text, Comment, 
+        # Text, CrossRef, Text
         assert len(paragraph.children) == 9
         
         # Verify the inline comment
@@ -1019,3 +1022,413 @@ Joe Smith /*legal name*/ (defined as "Joe") agrees to Section /*see above*/ [#pa
         # Verify the cross reference
         assert isinstance(paragraph.children[7], CrossReferenceNode)
         assert paragraph.children[7].reference_key == "payment-terms"
+
+
+class TestSignatureBlocks:
+    """Test signature block parsing."""
+
+    def test_individual_signature_no_fields(self) -> None:
+        """Test individual signature with just name."""
+        text = """
+
+---
+John Smith
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "John Smith"
+        assert signature.is_entity is False
+        assert signature.signatory is None
+        assert signature.by_entities == []
+        assert signature.fields == {}
+
+    def test_individual_signature_with_fields(self) -> None:
+        """Test individual signature with metadata fields."""
+        text = """
+
+---
+Jane Doe
+Title: in her individual capacity
+Address: 123 Main Street, New York, NY 10001
+Email: jane@example.com
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "Jane Doe"
+        assert signature.is_entity is False
+        assert signature.signatory is None
+        assert signature.by_entities == []
+        assert signature.fields == {
+            "Title": "in her individual capacity",
+            "Address": "123 Main Street, New York, NY 10001",
+            "Email": "jane@example.com"
+        }
+
+    def test_entity_signature_simple(self) -> None:
+        """Test entity signature with By: field."""
+        text = """
+
+---
+ABC Corporation
+By: John Smith
+Title: Chief Executive Officer
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "ABC Corporation"
+        assert signature.is_entity is True
+        assert signature.signatory == "John Smith"
+        assert signature.by_entities == []
+        assert signature.fields == {"Title": "Chief Executive Officer"}
+
+    def test_nested_entity_single_level(self) -> None:
+        """Test entity with one By Entity: field."""
+        text = """
+
+---
+Subsidiary Corp
+By Entity: Parent LLC, its sole member
+By: Jane Doe
+Title: Manager
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "Subsidiary Corp"
+        assert signature.is_entity is True
+        assert signature.signatory == "Jane Doe"
+        assert signature.by_entities == ["Parent LLC, its sole member"]
+        assert signature.fields == {"Title": "Manager"}
+
+    def test_nested_entity_multiple_levels(self) -> None:
+        """Test entity with multiple By Entity: fields."""
+        text = """
+
+---
+Investment Fund LP
+By Entity: ABC Management LLC, its General Partner
+By Entity: XYZ Holdings Inc., its Managing Member
+By: John Smith
+Title: President
+Address: 789 Finance Street, New York, NY 10005
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "Investment Fund LP"
+        assert signature.is_entity is True
+        assert signature.signatory == "John Smith"
+        assert signature.by_entities == [
+            "ABC Management LLC, its General Partner",
+            "XYZ Holdings Inc., its Managing Member"
+        ]
+        assert signature.fields == {
+            "Title": "President",
+            "Address": "789 Finance Street, New York, NY 10005"
+        }
+
+    def test_indentation_ignored(self) -> None:
+        """Test that indentation is ignored in signature blocks."""
+        text = """
+
+---
+Investment Fund LP
+  By Entity: ABC Management LLC, its General Partner
+    By Entity: XYZ Holdings Inc., its Managing Member
+      By: John Smith
+      Title: President
+Address: 789 Finance Street, New York, NY 10005
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "Investment Fund LP"
+        assert signature.is_entity is True
+        assert signature.signatory == "John Smith"
+        assert signature.by_entities == [
+            "ABC Management LLC, its General Partner",
+            "XYZ Holdings Inc., its Managing Member"
+        ]
+        assert signature.fields == {
+            "Title": "President",
+            "Address": "789 Finance Street, New York, NY 10005"
+        }
+
+    def test_minimum_dashes(self) -> None:
+        """Test minimum 3 dashes requirement."""
+        # Test with exactly 3 dashes
+        text = """
+
+---
+John Smith
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "John Smith"
+
+        # Test with more than 3 dashes
+        text = """
+
+------
+Jane Doe
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.party_name == "Jane Doe"
+
+    def test_less_than_three_dashes(self) -> None:
+        """Test that 2 dashes don't create signature block."""
+        text = """
+
+--
+John Smith
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        # Should be parsed as a single paragraph, not signature block
+        assert len(document.children) == 1
+        assert isinstance(document.children[0], ParagraphNode)
+        # Verify the text contains both lines
+        first_child = document.children[0].children[0]
+        assert isinstance(first_child, TextNode)
+        assert "-- John Smith" in first_child.text
+
+    def test_no_blank_line_before_dashes(self) -> None:
+        """Test that dashes without blank line don't create signature block."""
+        text = """Some text
+---
+John Smith
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        # Should be parsed as a single paragraph, not signature block
+        assert len(document.children) == 1
+        assert isinstance(document.children[0], ParagraphNode)
+        # Verify the text contains all content
+        first_child = document.children[0].children[0]
+        assert isinstance(first_child, TextNode)
+        assert "Some text --- John Smith" in first_child.text
+
+    def test_by_field_case_insensitive(self) -> None:
+        """Test that 'By:', 'by:', 'BY:' all work."""
+        text = """
+
+---
+ABC Corporation
+by: John Smith
+Title: CEO
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.is_entity is True
+        assert signature.signatory == "John Smith"
+        assert signature.fields == {"Title": "CEO"}
+
+        # Test with uppercase
+        text = """
+
+---
+XYZ LLC
+BY: Jane Doe
+Title: Manager
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.is_entity is True
+        assert signature.signatory == "Jane Doe"
+        assert signature.fields == {"Title": "Manager"}
+
+    def test_multiple_by_fields_error(self) -> None:
+        """Test error when multiple By: fields present."""
+        text = """
+
+---
+ABC Corporation
+By: John Smith
+Title: CEO
+By: Jane Doe
+"""
+        parser = KLMDParser()
+        
+        import pytest
+        with pytest.raises(ValueError, match="Multiple 'By:' fields found"):
+            parser.parse(text)
+
+    def test_multiple_signature_blocks(self) -> None:
+        """Test multiple signature blocks in sequence."""
+        text = """
+
+---
+John Smith
+
+---
+ABC Corporation
+By: Jane Doe
+Title: CEO
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 2
+        
+        # First signature (individual)
+        signature1 = document.children[0]
+        assert isinstance(signature1, SignatureBlockNode)
+        assert signature1.party_name == "John Smith"
+        assert signature1.is_entity is False
+        
+        # Second signature (entity)
+        signature2 = document.children[1]
+        assert isinstance(signature2, SignatureBlockNode)
+        assert signature2.party_name == "ABC Corporation"
+        assert signature2.is_entity is True
+        assert signature2.signatory == "Jane Doe"
+
+    def test_signatures_with_sections(self) -> None:
+        """Test signature blocks mixed with sections."""
+        text = """
+[# Terms] This section contains terms.
+
+---
+John Smith
+Title: Individual
+
+[# Payment] This section contains payment terms.
+
+---
+ABC Corporation
+By: Jane Doe
+Title: CEO
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 4
+        
+        # First section
+        assert isinstance(document.children[0], SectionNode)
+        assert document.children[0].title == "Terms"
+        
+        # First signature
+        assert isinstance(document.children[1], SignatureBlockNode)
+        assert document.children[1].party_name == "John Smith"
+        
+        # Second section
+        assert isinstance(document.children[2], SectionNode)
+        assert document.children[2].title == "Payment"
+        
+        # Second signature
+        assert isinstance(document.children[3], SignatureBlockNode)
+        assert document.children[3].party_name == "ABC Corporation"
+
+    def test_signature_with_title_blocks(self) -> None:
+        """Test signature blocks mixed with title blocks."""
+        text = """
+Agreement
+=========
+
+This is the main agreement.
+
+---
+Buyer
+By: John Smith
+Title: President
+
+Schedule A
+==========
+
+This is a schedule.
+
+---
+Seller
+By: Jane Doe
+Title: CEO
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 6
+        
+        # First title
+        assert isinstance(document.children[0], TitleNode)
+        assert document.children[0].title == "Agreement"
+        
+        # Paragraph after first title
+        assert isinstance(document.children[1], ParagraphNode)
+        
+        # First signature
+        assert isinstance(document.children[2], SignatureBlockNode)
+        assert document.children[2].party_name == "Buyer"
+        
+        # Second title
+        assert isinstance(document.children[3], TitleNode)
+        assert document.children[3].title == "Schedule A"
+        
+        # Paragraph after second title
+        assert isinstance(document.children[4], ParagraphNode)
+        
+        # Second signature
+        assert isinstance(document.children[5], SignatureBlockNode)
+        assert document.children[5].party_name == "Seller"
+
+    def test_colons_in_field_values(self) -> None:
+        """Test field values that contain colons."""
+        text = """
+
+---
+ABC Corporation
+By: John Smith
+Address: 123 Main St, Suite 100: Building A
+Email: john.smith@company.com
+Time: 9:00 AM
+"""
+        parser = KLMDParser()
+        document = parser.parse(text)
+        
+        assert len(document.children) == 1
+        signature = document.children[0]
+        assert isinstance(signature, SignatureBlockNode)
+        assert signature.fields == {
+            "Address": "123 Main St, Suite 100: Building A",
+            "Email": "john.smith@company.com",
+            "Time": "9:00 AM"
+        }

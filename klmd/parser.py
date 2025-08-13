@@ -71,7 +71,14 @@ class CommentNode(Node):
     is_inline: bool  # True for inline comments, False for line/block comments
 
 
-
+@dataclass
+class SignatureBlockNode(Node):
+    """Represents a signature block for legal documents."""
+    party_name: str  # Name of the signing party
+    is_entity: bool  # True if entity (has By: field), False if individual
+    by_entities: list[str]  # List of "By Entity:" values (in order)
+    signatory: str | None  # Human signatory from "By:" field (None for individuals)
+    fields: dict[str, str]  # All other metadata fields (Title, Address, etc.)
 
 
 class TitleRegistry:
@@ -137,6 +144,7 @@ class KLMDParser:
     PARENTHETICAL_PATTERN = re.compile(r'\([^)]+\)')
     LINE_COMMENT_PATTERN = re.compile(r'//(.*)$')
     BLOCK_COMMENT_PATTERN = re.compile(r'/\*(.*?)\*/', re.DOTALL)
+    SIGNATURE_DASH_PATTERN = re.compile(r'^-{3,}$')  # At least 3 dashes
     
     def __init__(self) -> None:
         self.title_registry = TitleRegistry()
@@ -275,6 +283,23 @@ class KLMDParser:
                 i += 2
                 continue
             
+            # Check for signature block pattern (blank line + dash line)
+            if (i > 0 and not lines[i - 1].strip() and 
+                self._is_dash_line(line) and
+                i + 1 < len(lines) and lines[i + 1].strip()):
+                
+                # Finish any pending paragraph
+                self._finish_paragraph(current_paragraph_lines, children)
+                current_paragraph_lines = []
+                
+                # Parse signature block
+                signature_block, next_i = self._parse_signature_block(lines, i)
+                children.append(signature_block)
+                
+                # Move to next unparsed line
+                i = next_i
+                continue
+            
             # Check for section pattern
             section_match = self.SECTION_PATTERN.match(line)
             if section_match:
@@ -386,10 +411,98 @@ class KLMDParser:
             children=[]
         )
     
+    def _parse_signature_block(
+        self, lines: list[str], dash_line_idx: int
+    ) -> tuple[SignatureBlockNode, int]:
+        """
+        Parse a signature block starting from the dash line.
+        Returns the SignatureBlockNode and the index of the next unparsed line.
+        """
+        # Get party name from line after dashes
+        party_name = lines[dash_line_idx + 1].strip()
+        
+        # Parse metadata fields
+        fields: dict[str, str] = {}
+        by_entities: list[str] = []
+        signatory: str | None = None
+        by_field_count = 0
+        
+        i = dash_line_idx + 2  # Start after party name line
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # Stop if we hit another signature block (blank + dash)
+            if (not line.strip() and 
+                i + 1 < len(lines) and 
+                self._is_dash_line(lines[i + 1])):
+                break
+            
+            # Stop if we hit a section
+            if self.SECTION_PATTERN.match(line):
+                break
+            
+            # Stop if we hit a title block (line + equals)
+            if (i + 1 < len(lines) and 
+                line.strip() and 
+                self._is_equals_line(lines[i + 1])):
+                break
+            
+            # Skip empty lines
+            if not line.strip():
+                i += 1
+                continue
+            
+            # Parse field line
+            stripped = line.strip()
+            if ':' in stripped:
+                key, value = stripped.split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Handle special fields (case-insensitive)
+                key_lower = key.lower()
+                if key_lower == 'by':
+                    by_field_count += 1
+                    if by_field_count > 1:
+                        raise ValueError(
+                            f"Multiple 'By:' fields found in signature block "
+                            f"for '{party_name}'"
+                        )
+                    signatory = value
+                elif key_lower == 'by entity':
+                    by_entities.append(value)
+                else:
+                    # Store other fields as-is
+                    fields[key] = value
+            
+            i += 1
+        
+        # Determine if this is an entity signature
+        is_entity = signatory is not None
+        
+        # Validate entity signatures have at least one field (the By: field)
+        if is_entity and by_field_count == 0:
+            raise ValueError(
+                f"Entity signature for '{party_name}' missing required 'By:' field"
+            )
+        
+        return SignatureBlockNode(
+            party_name=party_name,
+            is_entity=is_entity,
+            by_entities=by_entities,
+            signatory=signatory,
+            fields=fields
+        ), i
+    
     def _is_equals_line(self, line: str) -> bool:
         """Check if line is an equals line (3+ equals signs)."""
         stripped = line.strip()
         return len(stripped) >= 3 and all(c == '=' for c in stripped)
+    
+    def _is_dash_line(self, line: str) -> bool:
+        """Check if line is a dash line (3+ dashes)."""
+        return bool(self.SIGNATURE_DASH_PATTERN.match(line.strip()))
     
     def _parse_text_with_refs(self, text: str) -> list[Node]:
         """Parse text content, splitting into various node types."""
