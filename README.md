@@ -276,3 +276,49 @@ This is a test (this is \defined as "for example").
 ```
 - **Referent identification**: Not yet standardized. Parsers MAY assume the referent is the text immediately preceding the opening parenthesis until a future revision specifies an explicit rule
 
+### 7. Comments
+
+KLMD supports inline annotations and comments that can be included during drafting but may be excluded from final output. Comments use C-style syntax familiar to many users.
+
+#### 7.1. Line comments
+
+Line comments start with `//` and continue to the end of the line. These are useful for TODO items, reminders, or section-level notes.
+
+```markdown
+// This is a line comment
+[# Payment Terms] Payment is due within 30 days.
+// TODO: Check with client about net-30 vs net-45
+
+[# Termination] Either party may terminate this Agreement.
+// Need to add notice period requirements
+```
+
+#### 7.2. Block and inline comments
+
+Block comments are enclosed in `/*` and `*/` and can span multiple lines or appear inline within text. These are useful for detailed notes or inline clarifications.
+
+**Inline usage:**
+```markdown
+The Vendor /*ABC Corp or subsidiary*/ shall deliver by /*confirm date*/ December 31.
+
+Payment of /*$10,000 or $15,000?*/ shall be made within thirty days.
+```
+
+**Multi-line usage:**
+```markdown
+/* 
+Multi-line comment for longer discussions:
+- Need to verify payment terms with finance
+- Check currency for international transactions  
+- Consider late payment penalties
+*/
+
+[# Warranties] The Vendor warrants that...
+```
+
+#### 7.3. Processing notes
+
+- **Rendering flexibility**: Comments may be completely omitted, converted to marginal notes, or transformed into document comments depending on the output format
+- **Placement**: Comments can appear anywhere in the document - before titles, within sections, or inline within paragraphs
+- **Nesting**: Block comments (`/* */`) cannot be nested within each other
+

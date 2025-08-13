@@ -2,10 +2,6 @@
 
 The below portions of the spec have not yet been specified or implemented. They are placeholders for now.
 
-### Comments
-comments - initially free standing
-myst-directive style syntax?
-
 ### Signature blocks
 myst-directive style syntax?
 

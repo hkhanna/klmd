@@ -3,6 +3,7 @@ Tests for KLMD parser and AST nodes.
 """
 
 from klmd.parser import (
+    CommentNode,
     CrossReferenceNode,
     DefinedTermNode,
     DefinedTermRegistry,
@@ -845,3 +846,176 @@ Joe Smith (defined as "Joe") agrees to the terms in Section [#payment-terms]."""
         cross_ref = paragraph.children[3]
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "payment-terms"
+
+    def test_line_comment(self) -> None:
+        """Test parsing line comments."""
+        parser = KLMDParser()
+        text = """// This is a line comment
+[# Payment Terms] Payment is due within 30 days.
+// TODO: Check with client about net-30 vs net-45"""
+
+        doc = parser.parse(text)
+        
+        # Should have: comment, section, comment
+        assert len(doc.children) == 3
+        
+        # First comment
+        assert isinstance(doc.children[0], CommentNode)
+        comment1 = doc.children[0]
+        assert comment1.content == "This is a line comment"
+        assert comment1.is_inline is False
+        
+        # Section
+        assert isinstance(doc.children[1], SectionNode)
+        
+        # Second comment
+        assert isinstance(doc.children[2], CommentNode)
+        comment2 = doc.children[2]
+        assert comment2.content == "TODO: Check with client about net-30 vs net-45"
+        assert comment2.is_inline is False
+
+    def test_inline_block_comment(self) -> None:
+        """Test parsing inline block comments."""
+        parser = KLMDParser()
+        text = 'The Vendor /*ABC Corp or subsidiary*/ shall deliver by /*confirm date*/ December 31.'
+
+        doc = parser.parse(text)
+        
+        # Should have one paragraph
+        assert len(doc.children) == 1
+        paragraph = doc.children[0]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Should have: Text, Comment, Text, Comment, Text
+        assert len(paragraph.children) == 5
+        
+        assert isinstance(paragraph.children[0], TextNode)
+        assert paragraph.children[0].text == "The Vendor "
+        
+        assert isinstance(paragraph.children[1], CommentNode)
+        comment1 = paragraph.children[1]
+        assert comment1.content == "ABC Corp or subsidiary"
+        assert comment1.is_inline is True
+        
+        assert isinstance(paragraph.children[2], TextNode)
+        assert paragraph.children[2].text == " shall deliver by "
+        
+        assert isinstance(paragraph.children[3], CommentNode)
+        comment2 = paragraph.children[3]
+        assert comment2.content == "confirm date"
+        assert comment2.is_inline is True
+        
+        assert isinstance(paragraph.children[4], TextNode)
+        assert paragraph.children[4].text == " December 31."
+
+    def test_multi_line_block_comment(self) -> None:
+        """Test parsing multi-line block comments."""
+        parser = KLMDParser()
+        text = """/* 
+Multi-line comment for longer discussions:
+- Need to verify payment terms
+- Check currency for international transactions
+*/
+
+[# Warranties] The Vendor warrants that..."""
+
+        doc = parser.parse(text)
+        
+        # Should have: comment, section
+        assert len(doc.children) == 2
+        
+        # Multi-line comment
+        assert isinstance(doc.children[0], CommentNode)
+        comment = doc.children[0]
+        assert comment.is_inline is False  # Treated as block comment
+        expected_content = ("Multi-line comment for longer discussions:\n"
+                          "- Need to verify payment terms\n"
+                          "- Check currency for international transactions")
+        assert comment.content == expected_content
+        
+        # Section
+        assert isinstance(doc.children[1], SectionNode)
+
+    def test_mixed_comments_and_content(self) -> None:
+        """Test mixing line comments, block comments, and regular content."""
+        parser = KLMDParser()
+        text = """// Line comment at start
+[# Payment Terms] Payment /*amount TBD*/ is due within 30 days.
+
+// Another line comment
+The parties /*Joe and Company*/ agree to these terms.
+/* Block comment at end */"""
+
+        doc = parser.parse(text)
+        
+        # Should have: line comment, section, line comment, paragraph, block comment
+        assert len(doc.children) == 5
+        
+        # First line comment
+        assert isinstance(doc.children[0], CommentNode)
+        assert doc.children[0].content == "Line comment at start"
+        assert doc.children[0].is_inline is False
+        
+        # Section with inline comment
+        assert isinstance(doc.children[1], SectionNode)
+        section = doc.children[1]
+        assert len(section.children) == 3  # Text, Comment, Text
+        assert isinstance(section.children[1], CommentNode)
+        assert section.children[1].content == "amount TBD"
+        assert section.children[1].is_inline is True
+        
+        # Second line comment
+        assert isinstance(doc.children[2], CommentNode)
+        assert doc.children[2].content == "Another line comment"
+        assert doc.children[2].is_inline is False
+        
+        # Paragraph with inline comment
+        assert isinstance(doc.children[3], ParagraphNode)
+        paragraph = doc.children[3]
+        assert len(paragraph.children) == 3  # Text, Comment, Text
+        assert isinstance(paragraph.children[1], CommentNode)
+        assert paragraph.children[1].content == "Joe and Company"
+        assert paragraph.children[1].is_inline is True
+        
+        # Final block comment
+        assert isinstance(doc.children[4], CommentNode)
+        assert doc.children[4].content == "Block comment at end"
+        assert doc.children[4].is_inline is False
+
+    def test_comments_with_defined_terms_and_cross_refs(self) -> None:
+        """Test comments mixed with defined terms and cross-references."""
+        parser = KLMDParser()
+        text = """// Contract setup
+[# Payment Terms] Payment is due within 30 days.
+
+Joe Smith /*legal name*/ (defined as "Joe") agrees to Section /*see above*/ [#payment-terms]."""
+
+        doc = parser.parse(text)
+        
+        # Should have: line comment, section, paragraph
+        assert len(doc.children) == 3
+        
+        # Check the paragraph with mixed content
+        paragraph = doc.children[2]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Should have: Text, Comment, Text, DefinedTerm, Text, Comment, Text, CrossRef, Text
+        assert len(paragraph.children) == 9
+        
+        # Verify the inline comment
+        assert isinstance(paragraph.children[1], CommentNode)
+        assert paragraph.children[1].content == "legal name"
+        assert paragraph.children[1].is_inline is True
+        
+        # Verify the defined term
+        assert isinstance(paragraph.children[3], DefinedTermNode)
+        assert paragraph.children[3].term == "Joe"
+        
+        # Verify the second inline comment
+        assert isinstance(paragraph.children[5], CommentNode)
+        assert paragraph.children[5].content == "see above"
+        assert paragraph.children[5].is_inline is True
+        
+        # Verify the cross reference
+        assert isinstance(paragraph.children[7], CrossReferenceNode)
+        assert paragraph.children[7].reference_key == "payment-terms"

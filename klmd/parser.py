@@ -64,6 +64,13 @@ class DefinedTermNode(Node):
     descriptor: str | None  # Optional descriptor (e.g., "the", "a")
 
 
+@dataclass
+class CommentNode(Node):
+    """Represents a comment that may or may not be rendered."""
+    content: str  # The comment text (without delimiters)
+    is_inline: bool  # True for inline comments, False for line/block comments
+
+
 
 
 
@@ -128,6 +135,8 @@ class KLMDParser:
     CROSS_REF_PATTERN = re.compile(r'\[#([^\]]+)\]')
     DEFINED_TERM_PATTERN = re.compile(r'defined\s+as\s+(?:(\w+)\s+)?"([^"]+)"')
     PARENTHETICAL_PATTERN = re.compile(r'\([^)]+\)')
+    LINE_COMMENT_PATTERN = re.compile(r'//(.*)$')
+    BLOCK_COMMENT_PATTERN = re.compile(r'/\*(.*?)\*/', re.DOTALL)
     
     def __init__(self) -> None:
         self.title_registry = TitleRegistry()
@@ -182,6 +191,72 @@ class KLMDParser:
         
         while i < len(lines):
             line = lines[i]
+            
+            # Check for line comment
+            comment_match = self.LINE_COMMENT_PATTERN.match(line.strip())
+            if comment_match:
+                # Finish any pending paragraph
+                self._finish_paragraph(current_paragraph_lines, children)
+                current_paragraph_lines = []
+                
+                # Parse line comment
+                comment_content = comment_match.group(1).strip()
+                children.append(CommentNode(content=comment_content, is_inline=False))
+                i += 1
+                continue
+            
+            # Check for block comment starting on this line
+            if line.strip().startswith('/*'):
+                # Check if it's a standalone block comment (not mixed with other text)
+                stripped = line.strip()
+                block_match = self.BLOCK_COMMENT_PATTERN.search(stripped)
+                
+                if block_match and stripped == block_match.group(0):
+                    # Standalone block comment on one line
+                    self._finish_paragraph(current_paragraph_lines, children)
+                    current_paragraph_lines = []
+                    
+                    comment_content = block_match.group(1).strip()
+                    children.append(CommentNode(
+                        content=comment_content, is_inline=False
+                    ))
+                    i += 1
+                    continue
+                elif '*/' not in line:
+                    # Multi-line block comment starting
+                    self._finish_paragraph(current_paragraph_lines, children)
+                    current_paragraph_lines = []
+                    
+                    # Collect all lines until we find the closing */
+                    comment_lines = []
+                    j = i
+                    block_complete = False
+                    
+                    while j < len(lines):
+                        current_line = lines[j]
+                        comment_lines.append(current_line)
+                        if '*/' in current_line:
+                            block_complete = True
+                            break
+                        j += 1
+                    
+                    if block_complete:
+                        # Parse the multi-line block comment
+                        full_text = '\n'.join(comment_lines)
+                        block_match = self.BLOCK_COMMENT_PATTERN.search(full_text)
+                        if block_match:
+                            comment_content = block_match.group(1).strip()
+                            children.append(CommentNode(
+                                content=comment_content, is_inline=False
+                            ))
+                        
+                        i = j + 1
+                        continue
+                    else:
+                        # Incomplete block comment, treat as regular text
+                        current_paragraph_lines.extend(comment_lines)
+                        i = j + 1
+                        continue
             
             # Check for title pattern (line followed by equals)
             if (i + 1 < len(lines) and 
@@ -324,7 +399,7 @@ class KLMDParser:
         return self._parse_text_content(text)
     
     def _parse_text_content(self, text: str) -> list[Node]:
-        """Parse text content handling cross-refs and parenthetical expressions."""
+        """Parse text content handling cross-refs, parentheticals, and comments."""
         nodes: list[Node] = []
         pos = 0
         
@@ -332,6 +407,7 @@ class KLMDParser:
             # Look for the next special construct
             next_cross_ref = self.CROSS_REF_PATTERN.search(text, pos)
             next_parenthetical = self.PARENTHETICAL_PATTERN.search(text, pos)
+            next_block_comment = self.BLOCK_COMMENT_PATTERN.search(text, pos)
             
             # Determine which comes first
             next_special = None
@@ -344,6 +420,10 @@ class KLMDParser:
             if next_parenthetical and next_parenthetical.start() < next_pos:
                 next_pos = next_parenthetical.start()
                 next_special = 'parenthetical'
+            
+            if next_block_comment and next_block_comment.start() < next_pos:
+                next_pos = next_block_comment.start()
+                next_special = 'block_comment'
             
             # Add text before next special construct (if any)
             if next_pos > pos:
@@ -359,6 +439,10 @@ class KLMDParser:
                 paren_nodes = self._parse_parenthetical_content(next_parenthetical)
                 nodes.extend(paren_nodes)
                 pos = next_parenthetical.end()
+            elif next_special == 'block_comment' and next_block_comment:
+                comment_content = next_block_comment.group(1).strip()
+                nodes.append(CommentNode(content=comment_content, is_inline=True))
+                pos = next_block_comment.end()
             else:
                 # No more special constructs found, we're done
                 break
