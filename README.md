@@ -240,9 +240,39 @@ Pricing is set forth in Schedule [#pricing-terms].
 - **Case variations**: Both `[#payment-terms]` and `[#Payment-Terms]` resolve to the same section
 
 
-**Notes:**
-- Default format: lowercase letters in parentheses (a), (b), (c)
-- Numbering resets with each paragraph
-- Titles not allowed (unlike section numbers)
-- Renderers may support alternate formats: (i), (ii), (iii) or (1), (2), (3)
+### 6. Defined terms
+
+Legal documents often define parties, concepts, or other phrases for later reuse. KLMD marks such definitions with a short inline construct that is readable in plain text yet recognizable by software.
+
+A Defined-Term Introduction (DTI) appears inside parentheses, starts with the keyword `defined as`, and binds a quoted term to text that normally precedes it (the referent).
+
+A renderer MUST NOT display the words `defined as` in the final output.
+
+#### 6.1. Syntax
+
+```markdown
+( ... defined as <descriptor> "term" ... )
+```
+- **descriptor** (optional): a single word article or qualifier (e.g., `the`, `a`, `any`, `this`)
+- **"term"**: the defined term, enclosed in straight ASCII double quotes
+- whitespace: at least one space MUST appear after `defined as` and after any descriptor
+
+Multiple DTIs MAY appear inside a single pair of parentheses.
+
+#### 6.2. Example
+
+```markdown
+This Agreement is by and between Joe Smith (defined as "Joe") and Big Company LLC (defined as the "Company" and, together with Joe, defined as the "Parties").
+```
+
+This example introduces three defined terms: **Joe**, **Company**, and **Parties**.
+
+#### 6.3. Processing notes
+
+- **Uniqueness**: Each term MUST be unique within the document. Redefinition SHOULD raise a warning
+- **Escaping**: Prefix `defined as` with a backslash to prevent parsing as a DTI. The backslash is removed during rendering:
+```markdown
+This is a test (this is \defined as "for example").
+```
+- **Referent identification**: Not yet standardized. Parsers MAY assume the referent is the text immediately preceding the opening parenthesis until a future revision specifies an explicit rule
 

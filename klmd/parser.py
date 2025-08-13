@@ -57,6 +57,15 @@ class CrossReferenceNode(Node):
     original_text: str  # Original text for error messages
 
 
+@dataclass
+class DefinedTermNode(Node):
+    """Represents a defined term introduction."""
+    term: str  # The defined term (without quotes)
+    descriptor: str | None  # Optional descriptor (e.g., "the", "a")
+
+
+
+
 
 class TitleRegistry:
     """Tracks all section and attachment titles for cross-reference validation."""
@@ -89,15 +98,40 @@ class TitleRegistry:
         return [f"Duplicate title: '{title}'" for title in self.duplicates]
 
 
+class DefinedTermRegistry:
+    """Tracks all defined terms for validation."""
+    
+    def __init__(self) -> None:
+        self.terms: set[str] = set()  # Set of defined terms (case-sensitive)
+        self.duplicates: list[str] = []  # Track duplicates for error reporting
+    
+    def register(self, term: str) -> None:
+        """Register a defined term. Detects duplicates."""
+        if not term:
+            return
+        
+        if term in self.terms:
+            self.duplicates.append(term)
+        else:
+            self.terms.add(term)
+    
+    def get_duplicate_errors(self) -> list[str]:
+        """Get list of duplicate term errors."""
+        return [f"Duplicate defined term: '{term}'" for term in self.duplicates]
+
+
 class KLMDParser:
     """Parser for KLMD syntax."""
     
     SECTION_PATTERN = re.compile(r'^(\s*)\[([#]+)([^\]]*)\]\s*(.*)$')
     ATTACHMENT_PATTERN = re.compile(r'\[#\s*([^\]]*)\]')
     CROSS_REF_PATTERN = re.compile(r'\[#([^\]]+)\]')
+    DEFINED_TERM_PATTERN = re.compile(r'defined\s+as\s+(?:(\w+)\s+)?"([^"]+)"')
+    PARENTHETICAL_PATTERN = re.compile(r'\([^)]+\)')
     
     def __init__(self) -> None:
         self.title_registry = TitleRegistry()
+        self.defined_term_registry = DefinedTermRegistry()
         self.has_document_title = False
         self.attachment_count = 0  # Track count for TitleNode metadata
     
@@ -133,8 +167,11 @@ class KLMDParser:
     def _check_for_errors(self) -> None:
         """Check for parsing errors and raise if any found."""
         duplicate_errors = self.title_registry.get_duplicate_errors()
-        if duplicate_errors:
-            error_msg = f"Duplicate titles found: {'; '.join(duplicate_errors)}"
+        term_errors = self.defined_term_registry.get_duplicate_errors()
+        
+        all_errors = duplicate_errors + term_errors
+        if all_errors:
+            error_msg = f"Parsing errors: {'; '.join(all_errors)}"
             raise ValueError(error_msg)
     
     def _parse_lines(self, lines: list[str]) -> list[Node]:
@@ -280,44 +317,106 @@ class KLMDParser:
         return len(stripped) >= 3 and all(c == '=' for c in stripped)
     
     def _parse_text_with_refs(self, text: str) -> list[Node]:
-        """Parse text content, splitting into TextNode and CrossReferenceNode parts."""
+        """Parse text content, splitting into various node types."""
         if not text.strip():
             return []
         
+        return self._parse_text_content(text)
+    
+    def _parse_text_content(self, text: str) -> list[Node]:
+        """Parse text content handling cross-refs and parenthetical expressions."""
         nodes: list[Node] = []
-        last_end = 0
+        pos = 0
         
-        # Find all cross-reference patterns
-        for match in self.CROSS_REF_PATTERN.finditer(text):
-            start, end = match.span()
+        while pos < len(text):
+            # Look for the next special construct
+            next_cross_ref = self.CROSS_REF_PATTERN.search(text, pos)
+            next_parenthetical = self.PARENTHETICAL_PATTERN.search(text, pos)
             
-            # Add text before the reference as TextNode
-            if start > last_end:
-                text_content = text[last_end:start]
+            # Determine which comes first
+            next_special = None
+            next_pos = len(text)
+            
+            if next_cross_ref and next_cross_ref.start() < next_pos:
+                next_pos = next_cross_ref.start()
+                next_special = 'cross_ref'
+            
+            if next_parenthetical and next_parenthetical.start() < next_pos:
+                next_pos = next_parenthetical.start()
+                next_special = 'parenthetical'
+            
+            # Add text before next special construct (if any)
+            if next_pos > pos:
+                text_content = text[pos:next_pos]
                 if text_content:
                     nodes.append(TextNode(text=text_content))
             
-            # Add the cross-reference as CrossReferenceNode
-            reference_text = match.group(1).strip()
-            reference_key = reference_text.lower().replace(' ', '-')
-            original_text = match.group(0)
-            
-            nodes.append(CrossReferenceNode(
-                reference_key=reference_key,
-                original_text=original_text
-            ))
-            
-            last_end = end
+            # Handle the special construct if found
+            if next_special == 'cross_ref' and next_cross_ref:
+                nodes.append(self._parse_cross_reference(next_cross_ref))
+                pos = next_cross_ref.end()
+            elif next_special == 'parenthetical' and next_parenthetical:
+                paren_nodes = self._parse_parenthetical_content(next_parenthetical)
+                nodes.extend(paren_nodes)
+                pos = next_parenthetical.end()
+            else:
+                # No more special constructs found, we're done
+                break
         
-        # Add remaining text after last reference
-        if last_end < len(text):
-            text_content = text[last_end:]
-            if text_content:
-                nodes.append(TextNode(text=text_content))
-        
-        # If no references found, return single TextNode
+        # If no nodes were created, the text has no special constructs
         if not nodes:
-            nodes.append(TextNode(text=text))
+            return [TextNode(text=text)]
+        
+        return nodes
+    
+    def _parse_cross_reference(self, match: re.Match[str]) -> CrossReferenceNode:
+        """Parse a cross-reference from regex match."""
+        reference_text = match.group(1).strip()
+        reference_key = reference_text.lower().replace(' ', '-')
+        original_text = match.group(0)
+        
+        return CrossReferenceNode(
+            reference_key=reference_key,
+            original_text=original_text
+        )
+    
+    def _parse_parenthetical_content(self, match: re.Match[str]) -> list[Node]:
+        """Parse parenthetical content, extracting defined terms directly."""
+        full_content = match.group(0)  # e.g., "(defined as the "Company" and...)"
+        inner_content = full_content[1:-1]  # Remove outer parentheses
+        
+        # Check if this parenthetical contains any defined terms
+        if not self.DEFINED_TERM_PATTERN.search(inner_content):
+            # No defined terms, treat as regular text
+            return [TextNode(text=full_content)]
+        
+        # Parse the content for defined terms
+        nodes: list[Node] = []
+        pos = 0
+        
+        for match in self.DEFINED_TERM_PATTERN.finditer(inner_content):
+            start, end = match.span()
+            
+            # Add text before the defined term (if any)
+            if start > pos:
+                text_before = inner_content[pos:start]
+                if text_before.strip():  # Only add non-whitespace text
+                    nodes.append(TextNode(text=text_before))
+            
+            # Extract and register the defined term
+            descriptor = match.group(1)  # Optional descriptor
+            term = match.group(2)  # Required term
+            
+            self.defined_term_registry.register(term)
+            nodes.append(DefinedTermNode(term=term, descriptor=descriptor))
+            
+            pos = end
+        
+        # Add any remaining text after the last defined term
+        if pos < len(inner_content):
+            remaining = inner_content[pos:]
+            if remaining.strip():  # Only add non-whitespace text
+                nodes.append(TextNode(text=remaining))
         
         return nodes
     

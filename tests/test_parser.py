@@ -4,6 +4,8 @@ Tests for KLMD parser and AST nodes.
 
 from klmd.parser import (
     CrossReferenceNode,
+    DefinedTermNode,
+    DefinedTermRegistry,
     DocumentNode,
     KLMDParser,
     ParagraphNode,
@@ -61,6 +63,44 @@ class TestTitleRegistry:
         # Mixed case should become lowercase
         normalized = registry._normalize_title("PAYMENT TERMS")
         assert normalized == "payment-terms"
+
+
+class TestDefinedTermRegistry:
+    """Test the DefinedTermRegistry helper class."""
+
+    def test_basic_registration(self) -> None:
+        """Test basic defined term registration."""
+        registry = DefinedTermRegistry()
+        
+        registry.register("Joe")
+        registry.register("Company")
+        
+        assert "Joe" in registry.terms
+        assert "Company" in registry.terms
+        assert "Nonexistent" not in registry.terms
+
+    def test_duplicate_detection(self) -> None:
+        """Test duplicate defined term detection."""
+        registry = DefinedTermRegistry()
+        
+        registry.register("Joe")
+        registry.register("Joe")  # Duplicate
+        
+        errors = registry.get_duplicate_errors()
+        assert len(errors) == 1
+        assert "Joe" in errors[0]
+
+    def test_case_sensitivity(self) -> None:
+        """Test that defined terms are case-sensitive."""
+        registry = DefinedTermRegistry()
+        
+        registry.register("Joe")
+        registry.register("joe")  # Different from "Joe"
+        
+        # Should not be considered duplicates
+        errors = registry.get_duplicate_errors()
+        assert len(errors) == 0
+        assert len(registry.terms) == 2
 
 
 class TestKLMDParser:
@@ -659,7 +699,7 @@ Please see Section [#nonexistent-section] for more info."""
             parser.parse(text)
             raise AssertionError("Expected ValueError for duplicate titles")
         except ValueError as e:
-            assert "Duplicate titles found" in str(e)
+            assert "Duplicate title" in str(e)
             assert "Payment Terms" in str(e)
 
     def test_cross_reference_in_section_content(self) -> None:
@@ -678,3 +718,130 @@ Please see Section [#nonexistent-section] for more info."""
         cross_ref = section2.children[1]  # Content has: Text, CrossRef, Text
         assert isinstance(cross_ref, CrossReferenceNode)
         assert cross_ref.reference_key == "terms"
+
+    def test_simple_defined_term(self) -> None:
+        """Test parsing a simple defined term."""
+        parser = KLMDParser()
+        text = 'Joe Smith (defined as "Joe") is a party.'
+
+        doc = parser.parse(text)
+        
+        # Should have one paragraph
+        assert len(doc.children) == 1
+        paragraph = doc.children[0]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Paragraph should have: Text, DefinedTermNode, Text
+        assert len(paragraph.children) == 3
+        assert isinstance(paragraph.children[0], TextNode)
+        assert paragraph.children[0].text == "Joe Smith "
+        
+        assert isinstance(paragraph.children[1], DefinedTermNode)
+        term = paragraph.children[1]
+        assert term.term == "Joe"
+        assert term.descriptor is None
+        
+        assert isinstance(paragraph.children[2], TextNode)
+        assert paragraph.children[2].text == " is a party."
+
+    def test_defined_term_with_descriptor(self) -> None:
+        """Test parsing a defined term with descriptor."""
+        parser = KLMDParser()
+        text = 'Big Company LLC (defined as the "Company") provides services.'
+
+        doc = parser.parse(text)
+        
+        paragraph = doc.children[0]
+        assert isinstance(paragraph, ParagraphNode)
+        term = paragraph.children[1]
+        
+        assert isinstance(term, DefinedTermNode)
+        assert term.term == "Company"
+        assert term.descriptor == "the"
+
+    def test_multiple_defined_terms_in_parentheses(self) -> None:
+        """Test multiple defined terms in same parentheses."""
+        parser = KLMDParser()
+        text = ('Big Company LLC (defined as the "Company" and, together with Joe, '
+                'defined as the "Parties") hereby agree.')
+
+        doc = parser.parse(text)
+        
+        paragraph = doc.children[0]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Should have: Text, DefinedTermNode, Text, DefinedTermNode, Text
+        assert len(paragraph.children) == 5
+        
+        # First defined term
+        assert isinstance(paragraph.children[1], DefinedTermNode)
+        term1 = paragraph.children[1]
+        assert term1.term == "Company"
+        assert term1.descriptor == "the"
+        
+        # Text in between
+        assert isinstance(paragraph.children[2], TextNode)
+        assert " and, together with Joe, " in paragraph.children[2].text
+        
+        # Second defined term
+        assert isinstance(paragraph.children[3], DefinedTermNode)
+        term2 = paragraph.children[3]
+        assert term2.term == "Parties"
+        assert term2.descriptor == "the"
+
+    def test_spec_example(self) -> None:
+        """Test the example from the specification."""
+        parser = KLMDParser()
+        text = ('This Agreement is by and between Joe Smith (defined as "Joe") '
+                'and Big Company LLC (defined as the "Company" and, together with '
+                'Joe, defined as the "Parties").')
+
+        parser.parse(text)
+        
+        # Should register all three terms
+        assert "Joe" in parser.defined_term_registry.terms
+        assert "Company" in parser.defined_term_registry.terms
+        assert "Parties" in parser.defined_term_registry.terms
+
+    def test_duplicate_defined_term_error(self) -> None:
+        """Test that duplicate defined terms raise an error."""
+        parser = KLMDParser()
+        text = ('Joe Smith (defined as "Joe") and another Joe '
+                '(defined as "Joe") are here.')
+
+        # Should raise ValueError for duplicate defined term
+        try:
+            parser.parse(text)
+            raise AssertionError("Expected ValueError for duplicate defined terms")
+        except ValueError as e:
+            assert "Duplicate defined term" in str(e)
+            assert "Joe" in str(e)
+
+    def test_mixed_cross_refs_and_defined_terms(self) -> None:
+        """Test text with both cross-references and defined terms."""
+        parser = KLMDParser()
+        text = """[# Payment Terms] Payment is due within 30 days.
+
+Joe Smith (defined as "Joe") agrees to the terms in Section [#payment-terms]."""
+
+        doc = parser.parse(text)
+        
+        # Should have section and paragraph
+        assert len(doc.children) == 2
+        
+        # Check the paragraph with mixed content
+        paragraph = doc.children[1]
+        assert isinstance(paragraph, ParagraphNode)
+        
+        # Should have: Text, DefinedTermNode, Text, CrossReferenceNode, Text
+        assert len(paragraph.children) == 5
+        
+        # Check defined term
+        term = paragraph.children[1]
+        assert isinstance(term, DefinedTermNode)
+        assert term.term == "Joe"
+        
+        # Check cross reference
+        cross_ref = paragraph.children[3]
+        assert isinstance(cross_ref, CrossReferenceNode)
+        assert cross_ref.reference_key == "payment-terms"
