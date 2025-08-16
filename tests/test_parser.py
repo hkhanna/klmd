@@ -1000,7 +1000,7 @@ The parties /*Joe and Company*/ agree to these terms.
             "// Contract setup\n"
             "[# Payment Terms] Payment is due within 30 days.\n"
             "\n"
-            "Joe Smith /*legal name*/ (defined as \"Joe\") agrees to Section "
+            'Joe Smith /*legal name*/ (defined as "Joe") agrees to Section '
             "/*see above*/ [#payment-terms]."
         )
 
