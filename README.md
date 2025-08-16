@@ -67,7 +67,7 @@ This line is part of the same paragraph.
 This is a second paragraph.
 ```
 
-**Rendered output:**
+**Example rendered output:**
 ```
 This is the first paragraph. This line is part of the same paragraph.
 
@@ -214,9 +214,9 @@ Automatically updated references to sections, exhibits, or other numbered elemen
 [# Payment Terms] Payment is due within 30 days...
 [# Termination] Either party may terminate...
 
-The confidentiality obligations in Section [#confidentiality] shall survive termination.
-Subject to Section [#payment-terms], all fees are non-refundable.
-Termination procedures are detailed in Section [#termination].
+The confidentiality obligations in [#confidentiality] shall survive termination.
+Subject to [#payment-terms], all fees are non-refundable.
+Termination procedures are detailed in [#termination].
 ```
 
 **Example rendered output:**
@@ -282,12 +282,12 @@ KLMD supports inline annotations and comments that can be included during drafti
 
 #### 7.1. Line comments
 
-Line comments start with `//` and continue to the end of the line. These are useful for TODO items, reminders, or section-level notes.
+Line comments start with `//` and continue to the end of the line. These are useful for notes, reminders, or section-level annotations.
 
 ```markdown
 // This is a line comment
 [# Payment Terms] Payment is due within 30 days.
-// TODO: Check with client about net-30 vs net-45
+// Note: Check with client about net-30 vs net-45
 
 [# Termination] Either party may terminate this Agreement.
 // Need to add notice period requirements
@@ -351,7 +351,6 @@ John Smith
 
 -------------------
 Jane Doe
-Title: in her individual capacity
 Address: 123 Main Street, New York, NY 10001
 Email: jane@example.com
 ```
