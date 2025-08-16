@@ -414,7 +414,6 @@ Address: 123 Main St
 # Output:
 ____________________
 John Smith
-
 Address: 123 Main St
 ```
 
