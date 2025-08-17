@@ -59,6 +59,14 @@ class SectionContentPlacement(Enum):
     NEWLINE = "newline"  # Content starts on next line
 
 
+class AnchorGeneration(Enum):
+    """Anchor generation options for sections."""
+
+    NONE = "none"  # No anchors generated
+    CROSS_REFERENCED = "cross_referenced"  # Only for sections that are cross-referenced
+    ALL = "all"  # Generate anchors for all sections
+
+
 @dataclass
 class LevelNumbering:
     """Configuration for a single numbering level."""
@@ -386,6 +394,7 @@ class MarkdownConfig:
     heading_base_level: int = 2
     section_indent: str = "    "  # 4 spaces by default, can be "\t" for tab
     section_content_placement: SectionContentPlacement = SectionContentPlacement.NEWLINE
+    anchor_generation: AnchorGeneration = AnchorGeneration.CROSS_REFERENCED
 
 
 class NumberingTracker:
@@ -442,6 +451,7 @@ class NumberingResolver:
         self.attachment_numbers: dict[int, str] = {}  # node id -> number
         self.title_to_number: dict[str, str] = {}
         self.title_to_anchor: dict[str, str] = {}
+        self.cross_referenced_titles: set[str] = set()  # cross-referenced titles
 
     def resolve(self, document: DocumentNode) -> None:
         """Traverse document and assign all numbers."""
@@ -487,6 +497,9 @@ class NumberingResolver:
             for child in node.children:
                 self._traverse_node(child)
 
+        elif isinstance(node, CrossReferenceNode):
+            # Track cross-referenced titles
+            self.cross_referenced_titles.add(node.reference_key)
         elif hasattr(node, "children"):
             # Process children for other node types
             for child in node.children:
@@ -502,6 +515,17 @@ class NumberingResolver:
         anchor = re.sub(r"[^\w\s-]", "", title).strip()
         anchor = re.sub(r"[-\s]+", "-", anchor)
         return anchor.lower()
+
+    def should_generate_anchor(self, title: str) -> bool:
+        """Check if an anchor should be generated for the given title."""
+        if self.config.anchor_generation == AnchorGeneration.NONE:
+            return False
+        elif self.config.anchor_generation == AnchorGeneration.ALL:
+            return True
+        elif self.config.anchor_generation == AnchorGeneration.CROSS_REFERENCED:
+            title_key = self._normalize_title(title)
+            return title_key in self.cross_referenced_titles
+        return False
 
 
 class StyleFormatter:
@@ -656,10 +680,13 @@ class MarkdownRenderer:
             else:
                 heading_text = f"{number}. {styled_title}"
 
-            # Generate anchor
-            anchor = self.resolver.title_to_anchor.get(
-                self.resolver._normalize_title(node.title), ""
-            )
+            # Generate anchor based on configuration
+            anchor = ""
+            if self.resolver.should_generate_anchor(node.title):
+                anchor = self.resolver.title_to_anchor.get(
+                    self.resolver._normalize_title(node.title), ""
+                )
+
             if anchor:
                 section_line = f"{indent}{heading_text} {{#{anchor}}}"
             else:
@@ -738,10 +765,22 @@ class MarkdownRenderer:
             # Missing reference - return original text
             return node.original_text
 
-        # Apply template
-        ref_text = self.config.cross_references.template.format(number=number)
+        # Strip trailing period from number for cross-references
+        # Keep other suffixes like parentheses which are structural
+        ref_number = number.rstrip(".") if number.endswith(".") else number
 
-        if self.config.cross_references.generate_links and anchor:
+        # Apply template
+        ref_text = self.config.cross_references.template.format(number=ref_number)
+
+        # Only generate link if cross-references are enabled, anchor exists,
+        # and anchor generation allows it
+        should_generate_link = (
+            self.config.cross_references.generate_links
+            and anchor
+            and self.config.anchor_generation != AnchorGeneration.NONE
+        )
+
+        if should_generate_link:
             return f"[{ref_text}](#{anchor})"
         else:
             return ref_text

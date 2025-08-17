@@ -181,6 +181,47 @@ config = MarkdownConfig(section_content_placement=SectionContentPlacement.NEWLIN
 config = MarkdownConfig(section_content_placement=SectionContentPlacement.INLINE)
 ```
 
+#### Anchor Generation
+
+Section anchors enable linking to specific sections within documents. The renderer can generate anchors in three modes:
+
+**CROSS_REFERENCED (default)**: Only generate anchors for sections that are actually referenced elsewhere in the document
+```markdown
+1. **Payment Terms** {#payment-terms}  # Has anchor because it's referenced
+2. **Definitions**                      # No anchor because it's not referenced
+```
+
+**ALL**: Generate anchors for all sections regardless of whether they're referenced
+```markdown
+1. **Payment Terms** {#payment-terms}
+2. **Definitions** {#definitions}
+```
+
+**NONE**: Never generate anchors
+```markdown
+1. **Payment Terms**
+2. **Definitions**
+```
+
+This is controlled by the `anchor_generation` configuration option:
+
+```python
+# Default behavior (only cross-referenced sections get anchors)
+config = MarkdownConfig(anchor_generation=AnchorGeneration.CROSS_REFERENCED)
+
+# Generate anchors for all sections
+config = MarkdownConfig(anchor_generation=AnchorGeneration.ALL)
+
+# Never generate anchors
+config = MarkdownConfig(anchor_generation=AnchorGeneration.NONE)
+```
+
+**Benefits of CROSS_REFERENCED mode:**
+- Cleaner output with fewer unnecessary anchors
+- Only generates anchors that are actually needed for navigation
+- Reduces clutter in the markdown source
+- Still supports all cross-reference functionality
+
 #### Document and Attachment Titles
 - **Heading level**: Document and attachment titles use H1 (`#`)
 - **Numbering placeholder**: Resolve `[#]` to actual attachment number
@@ -287,6 +328,17 @@ Section 2
 # With template="§{number}":
 [§2](#payment-terms)
 ```
+
+#### Number Formatting in Cross-References
+
+Cross-references automatically strip trailing periods from section numbers to avoid awkward constructions like "Section 3." However, meaningful suffixes like parentheses are preserved:
+
+- Section numbered "3." renders as "Section 3" in cross-references
+- Section numbered "3(a)" renders as "Section 3(a)" in cross-references
+
+This ensures that:
+- Simple numbered sections read naturally: "See Section 1 for details"
+- Complex numbered sections preserve their structure: "Refer to Section 1(a)(ii)"
 
 ## Defined Terms
 
@@ -514,6 +566,7 @@ class MarkdownConfig:
     heading_base_level: int = 2
     section_indent: str = "    "  # 4 spaces by default, can be "\t" for tab
     section_content_placement: SectionContentPlacement = SectionContentPlacement.NEWLINE
+    anchor_generation: AnchorGeneration = AnchorGeneration.CROSS_REFERENCED
 ```
 
 #### NumberingScheme

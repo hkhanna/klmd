@@ -16,6 +16,7 @@ from klmd.parser import (
     TitleNode,
 )
 from klmd.renderers.markdown import (
+    AnchorGeneration,
     CommentStyle,
     CrossReferenceConfig,
     LevelNumbering,
@@ -371,7 +372,10 @@ class TestMarkdownRenderer:
             ]
         )
 
-        config = MarkdownConfig(section_numbering=NumberingScheme.from_preset("legal"))
+        config = MarkdownConfig(
+            section_numbering=NumberingScheme.from_preset("legal"),
+            anchor_generation=AnchorGeneration.ALL,
+        )
         renderer = MarkdownRenderer(config)
         output = renderer.render(document)
 
@@ -405,8 +409,8 @@ class TestMarkdownRenderer:
         renderer = MarkdownRenderer()
         output = renderer.render(document)
 
-        assert "[Section 1.](#payment-terms)" in output
-        assert "See [Section 1.](#payment-terms) for details." in output
+        assert "[Section 1](#payment-terms)" in output
+        assert "See [Section 1](#payment-terms) for details." in output
 
     def test_defined_term_rendering(self) -> None:
         """Test defined term rendering."""
@@ -614,8 +618,8 @@ class TestMarkdownRenderer:
 
         # Check document structure
         assert "# Master Services Agreement" in output
-        assert "1. **Definitions** {#definitions}" in output
-        assert "2. **Payment** {#payment}" in output
+        assert "1. **Definitions** {#definitions}" in output  # Has anchor
+        assert "2. **Payment**\n" in output  # No anchor (not cross-referenced)
         assert "# Exhibit A" in output
         assert "Statement of Work" in output
 
@@ -623,7 +627,7 @@ class TestMarkdownRenderer:
         assert "(the **Company**)" in output
 
         # Check cross-reference
-        assert "[Section 1.](#definitions)" in output
+        assert "[Section 1](#definitions)" in output
 
 
 class TestConfigurationIntegration:
@@ -653,7 +657,7 @@ class TestConfigurationIntegration:
         renderer = MarkdownRenderer(config)
         output = renderer.render(document)
 
-        assert "(1.)" in output
+        assert "(1)" in output
         assert "[" not in output  # No links generated
 
     def test_custom_defined_term_style(self) -> None:
@@ -681,7 +685,9 @@ class TestConfigurationIntegration:
             children=[SectionNode(level=1, title="Test", children=[])]
         )
 
-        config = MarkdownConfig(heading_base_level=3)
+        config = MarkdownConfig(
+            heading_base_level=3, anchor_generation=AnchorGeneration.ALL
+        )
         renderer = MarkdownRenderer(config)
         output = renderer.render(document)
 
@@ -706,7 +712,7 @@ class TestConfigurationIntegration:
         )
 
         # Test default indentation (4 spaces)
-        config = MarkdownConfig()
+        config = MarkdownConfig(anchor_generation=AnchorGeneration.ALL)
         renderer = MarkdownRenderer(config)
         output = renderer.render(document)
 
@@ -715,7 +721,9 @@ class TestConfigurationIntegration:
         assert "        1.1.1. Third {#third}" in output  # Level 3 uses plain
 
         # Test tab indentation
-        config_tab = MarkdownConfig(section_indent="\t")
+        config_tab = MarkdownConfig(
+            section_indent="\t", anchor_generation=AnchorGeneration.ALL
+        )
         renderer_tab = MarkdownRenderer(config_tab)
         output_tab = renderer_tab.render(document)
 
@@ -724,7 +732,9 @@ class TestConfigurationIntegration:
         assert "\t\t1.1.1. Third {#third}" in output_tab
 
         # Test 2-space indentation
-        config_2space = MarkdownConfig(section_indent="  ")
+        config_2space = MarkdownConfig(
+            section_indent="  ", anchor_generation=AnchorGeneration.ALL
+        )
         renderer_2space = MarkdownRenderer(config_2space)
         output_2space = renderer_2space.render(document)
 
@@ -754,7 +764,8 @@ class TestConfigurationIntegration:
 
         # Test NEWLINE placement (default)
         config_newline = MarkdownConfig(
-            section_content_placement=SectionContentPlacement.NEWLINE
+            section_content_placement=SectionContentPlacement.NEWLINE,
+            anchor_generation=AnchorGeneration.ALL,
         )
         renderer_newline = MarkdownRenderer(config_newline)
         output_newline = renderer_newline.render(titled_document)
@@ -771,7 +782,8 @@ class TestConfigurationIntegration:
 
         # Test INLINE placement
         config_inline = MarkdownConfig(
-            section_content_placement=SectionContentPlacement.INLINE
+            section_content_placement=SectionContentPlacement.INLINE,
+            anchor_generation=AnchorGeneration.ALL,
         )
         renderer_inline = MarkdownRenderer(config_inline)
         output_inline = renderer_inline.render(titled_document)
@@ -824,6 +836,177 @@ class TestConfigurationIntegration:
         # Should be identical behavior
         assert "1. Payment is due within 30 days." in output_inline
         assert "Late fees apply after grace period." in output_inline
+
+    def test_anchor_generation_config(self) -> None:
+        """Test different anchor generation modes."""
+        document = DocumentNode(
+            children=[
+                SectionNode(
+                    level=1,
+                    title="Payment Terms",
+                    children=[
+                        ParagraphNode(
+                            children=[TextNode("Payment is due within 30 days.")]
+                        )
+                    ],
+                ),
+                SectionNode(
+                    level=1,
+                    title="Definitions",
+                    children=[
+                        ParagraphNode(children=[TextNode("Terms are defined here.")])
+                    ],
+                ),
+                ParagraphNode(
+                    children=[
+                        TextNode("See "),
+                        CrossReferenceNode(
+                            reference_key="payment-terms",
+                            original_text="[#payment-terms]",
+                        ),
+                        TextNode(" for details."),
+                    ]
+                ),
+            ]
+        )
+
+        # Test CROSS_REFERENCED mode (default) - only Payment Terms should have anchor
+        config_cross_ref = MarkdownConfig(
+            anchor_generation=AnchorGeneration.CROSS_REFERENCED
+        )
+        renderer_cross_ref = MarkdownRenderer(config_cross_ref)
+        output_cross_ref = renderer_cross_ref.render(document)
+
+        assert "1. **Payment Terms** {#payment-terms}" in output_cross_ref
+        assert "2. **Definitions**\n" in output_cross_ref  # No anchor
+        assert "[Section 1](#payment-terms)" in output_cross_ref
+
+        # Test ALL mode - both sections should have anchors
+        config_all = MarkdownConfig(anchor_generation=AnchorGeneration.ALL)
+        renderer_all = MarkdownRenderer(config_all)
+        output_all = renderer_all.render(document)
+
+        assert "1. **Payment Terms** {#payment-terms}" in output_all
+        assert "2. **Definitions** {#definitions}" in output_all
+        assert "[Section 1](#payment-terms)" in output_all
+
+        # Test NONE mode - no anchors should be generated
+        config_none = MarkdownConfig(anchor_generation=AnchorGeneration.NONE)
+        renderer_none = MarkdownRenderer(config_none)
+        output_none = renderer_none.render(document)
+
+        assert "1. **Payment Terms**\n" in output_none  # No anchor
+        assert "2. **Definitions**\n" in output_none  # No anchor
+        # Cross-reference still works but without links
+        assert "Section 1" in output_none  # No link generated since no anchor
+
+    def test_anchor_generation_with_multiple_references(self) -> None:
+        """Test anchor generation when multiple sections reference the same section."""
+        document = DocumentNode(
+            children=[
+                SectionNode(
+                    level=1,
+                    title="Payment Terms",
+                    children=[ParagraphNode(children=[TextNode("Payment details.")])],
+                ),
+                SectionNode(
+                    level=1,
+                    title="Late Fees",
+                    children=[ParagraphNode(children=[TextNode("Late fee details.")])],
+                ),
+                SectionNode(
+                    level=1,
+                    title="Summary",
+                    children=[
+                        ParagraphNode(
+                            children=[
+                                TextNode("See "),
+                                CrossReferenceNode(
+                                    reference_key="payment-terms",
+                                    original_text="[#payment-terms]",
+                                ),
+                                TextNode(" and "),
+                                CrossReferenceNode(
+                                    reference_key="payment-terms",
+                                    original_text="[#payment-terms]",
+                                ),
+                                TextNode(" again."),
+                            ]
+                        )
+                    ],
+                ),
+            ]
+        )
+
+        config = MarkdownConfig(anchor_generation=AnchorGeneration.CROSS_REFERENCED)
+        renderer = MarkdownRenderer(config)
+        output = renderer.render(document)
+
+        # Payment Terms should have anchor (referenced twice)
+        assert "1. **Payment Terms** {#payment-terms}" in output
+        # Late Fees should not have anchor (not referenced)
+        assert "2. **Late Fees**\n" in output
+        # Summary should not have anchor (not referenced)
+        assert "3. **Summary**\n" in output
+
+    def test_cross_reference_formatting_strips_periods(self) -> None:
+        """Test cross-references strip trailing periods but preserve parentheses."""
+        document = DocumentNode(
+            children=[
+                # Section with decimal numbering (has period suffix)
+                SectionNode(
+                    level=1,
+                    title="Payment Terms",
+                    children=[ParagraphNode(children=[TextNode("Payment details.")])],
+                ),
+                # Subsection with legal numbering (has parentheses, no trailing period)
+                SectionNode(
+                    level=2,
+                    title="Late Fees",
+                    children=[ParagraphNode(children=[TextNode("Late fee details.")])],
+                ),
+                # Cross-references to both
+                ParagraphNode(
+                    children=[
+                        TextNode("See "),
+                        CrossReferenceNode(
+                            reference_key="payment-terms",
+                            original_text="[#payment-terms]",
+                        ),
+                        TextNode(" and "),
+                        CrossReferenceNode(
+                            reference_key="late-fees",
+                            original_text="[#late-fees]",
+                        ),
+                        TextNode("."),
+                    ]
+                ),
+            ]
+        )
+
+        # Test with decimal preset (has period suffixes)
+        config_decimal = MarkdownConfig(
+            section_numbering=NumberingScheme.from_preset("decimal"),
+            anchor_generation=AnchorGeneration.ALL,
+        )
+        renderer_decimal = MarkdownRenderer(config_decimal)
+        output_decimal = renderer_decimal.render(document)
+
+        # Cross-references should strip trailing periods
+        assert "[Section 1](#payment-terms)" in output_decimal  # Not "Section 1."
+        assert "[Section 1.1](#late-fees)" in output_decimal    # Not "Section 1.1."
+
+        # Test with legal preset (has parentheses but no trailing periods)
+        config_legal = MarkdownConfig(
+            section_numbering=NumberingScheme.from_preset("legal"),
+            anchor_generation=AnchorGeneration.ALL,
+        )
+        renderer_legal = MarkdownRenderer(config_legal)
+        output_legal = renderer_legal.render(document)
+
+        # Cross-references should preserve parentheses
+        assert "[Section 1](#payment-terms)" in output_legal    # No period to strip
+        assert "[Section 1(a)](#late-fees)" in output_legal    # Parentheses preserved
 
 
 if __name__ == "__main__":
