@@ -12,6 +12,7 @@ from typing import Any, TextIO
 
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -30,6 +31,7 @@ from .renderers.markdown import (
 
 class CLIError(Exception):
     """Exception raised for CLI-specific errors."""
+
     pass
 
 
@@ -64,12 +66,14 @@ Examples:
 
     # Output options
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         dest="output_file",
         help="Output file (alternative to positional argument)",
     )
     parser.add_argument(
-        "-f", "--format",
+        "-f",
+        "--format",
         choices=["markdown", "html", "docx", "pdf"],
         default="markdown",
         help="Output format (default: markdown)",
@@ -77,13 +81,15 @@ Examples:
 
     # Configuration file
     parser.add_argument(
-        "-c", "--config",
+        "-c",
+        "--config",
         help="Configuration file (YAML or JSON)",
     )
 
     # Quick presets
     parser.add_argument(
-        "-p", "--preset",
+        "-p",
+        "--preset",
         choices=["decimal", "legal", "outline", "simple", "alpha_parens", "letters"],
         help="Quick preset for section numbering",
     )
@@ -162,7 +168,8 @@ Examples:
         help="Validate input only, do not generate output",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Verbose output",
     )
@@ -188,19 +195,19 @@ def load_config_file(config_path: str) -> dict[str, Any]:
 
     try:
         with open(path) as f:
-            if path.suffix.lower() in ['.yaml', '.yml']:
+            if path.suffix.lower() in [".yaml", ".yml"]:
                 if not YAML_AVAILABLE:
                     raise CLIError("PyYAML is required for YAML configuration files")
                 result = yaml.safe_load(f)
                 return result if result is not None else {}
-            elif path.suffix.lower() == '.json':
+            elif path.suffix.lower() == ".json":
                 result = json.load(f)
                 return result if isinstance(result, dict) else {}
             else:
                 # Try to detect format from content
                 content = f.read()
                 f.seek(0)
-                if content.strip().startswith('{'):
+                if content.strip().startswith("{"):
                     result = json.load(f)
                     return result if isinstance(result, dict) else {}
                 else:
@@ -251,7 +258,7 @@ def create_config_from_args(
             config.section_numbering = NumberingScheme.from_preset(
                 section_config["preset"]
             )
-        
+
         # Apply customizations
         if "customize" in section_config:
             for level_str, level_config in section_config["customize"].items():
@@ -303,7 +310,7 @@ def create_config_from_args(
     # Apply command line arguments (these override config file)
     if args.preset:
         config.section_numbering = NumberingScheme.from_preset(args.preset)
-    
+
     if args.section_preset:
         config.section_numbering = NumberingScheme.from_preset(args.section_preset)
 
@@ -353,7 +360,7 @@ def open_input_file(filename: str) -> TextIO:
     if filename == "-":
         return sys.stdin
     try:
-        return open(filename, encoding='utf-8')
+        return open(filename, encoding="utf-8")
     except FileNotFoundError as e:
         raise CLIError(f"Input file not found: {filename}") from e
     except PermissionError as e:
@@ -365,7 +372,7 @@ def open_output_file(filename: str) -> TextIO:
     if filename is None:
         return sys.stdout
     try:
-        return open(filename, 'w', encoding='utf-8')
+        return open(filename, "w", encoding="utf-8")
     except PermissionError as e:
         raise CLIError(f"Permission denied writing file: {filename}") from e
 
@@ -389,7 +396,7 @@ def main() -> int:
             input_text = f.read()
 
         if args.verbose:
-            input_desc = 'stdin' if args.input == '-' else args.input
+            input_desc = "stdin" if args.input == "-" else args.input
             print(f"Reading from: {input_desc}", file=sys.stderr)
             if output_file:
                 print(f"Writing to: {output_file}", file=sys.stderr)
@@ -447,7 +454,7 @@ def main() -> int:
         print("\nInterrupted", file=sys.stderr)
         return 130
     except Exception as e:
-        if args.debug if 'args' in locals() else False:
+        if args.debug if "args" in locals() else False:
             raise
         print(f"Unexpected error: {e}", file=sys.stderr)
         return 1

@@ -142,14 +142,44 @@ attachment_numbering = NumberingScheme(
 
 #### Section Output Format
 ```markdown
-## 1. Payment Terms
+1. Payment Terms
 ```
 
 - **Number calculation**: Track hierarchical position in document
 - **Title formatting**: Apply configured text styling from `title_style`
 - **Anchor generation**: `{#payment-terms}` for cross-reference targets
-- **Heading hierarchy**: Section levels 1-5 map to H2-H6 headings
-- **Number placement**: `## 1. Title` format with number before title
+- **Number placement**: `1. Title` format with number before title
+- **Content placement**: Configurable positioning of section content relative to titles
+
+#### Section Content Placement
+
+Section content can be positioned in two ways relative to the section title or number:
+
+**NEWLINE (default)**: Content starts on the next line after the title
+```markdown
+1. Payment Terms
+Payment is due within 30 days.
+```
+
+**INLINE**: Content starts on the same line as the title, with a period and space separator
+```markdown
+1. Payment Terms. Payment is due within 30 days.
+```
+
+**Untitled Sections**: Content always starts immediately after the number, regardless of placement setting
+```markdown
+1. Payment is due within 30 days.
+```
+
+This is controlled by the `section_content_placement` configuration option:
+
+```python
+# Default behavior (content on new line)
+config = MarkdownConfig(section_content_placement=SectionContentPlacement.NEWLINE)
+
+# Inline behavior (content after title with period)
+config = MarkdownConfig(section_content_placement=SectionContentPlacement.INLINE)
+```
 
 #### Document and Attachment Titles
 - **Heading level**: Document and attachment titles use H1 (`#`)
@@ -169,21 +199,23 @@ attachment_numbering = NumberingScheme(
 
 **Renders to:**
 ```markdown
-## 1. First Section
-### 1(a). Subsection
-### 1(b). Another Subsection
-#### 1(b)(i). Sub-subsection
-## 2. Second Section
+1. First Section
+    1(a). Subsection
+    1(b). Another Subsection
+        1(b)(i). Sub-subsection
+2. Second Section
 ```
+
+Note to Claude: Let's have the sections rendered indended with a tab or a number of spaces, configurable.
 
 ##### Custom Format (1(a).1)
 **Renders to:**
 ```markdown
-## 1. First Section
-### 1(a). Subsection
-### 1(b). Another Subsection
-#### 1(b).1. Sub-subsection
-## 2. Second Section
+1. First Section
+    1(a). Subsection
+    1(b). Another Subsection
+        1(b).1. Sub-subsection
+2. Second Section
 ```
 
 ## Cross-References
@@ -290,23 +322,23 @@ config = MarkdownConfig(defined_term_style=TextStyle.PLAIN)
 - **Term extraction**: Pull quoted term from DTI syntax
 - **Referent identification**: Extract preceding text that term defines
 - **Styling application**: Apply configured text formatting
-- **Descriptor handling**: Include/exclude descriptors like "the", "any"
+- **Descriptor handling**: Include descriptors like "the", "any"
 
 #### Output Examples
 ```markdown
 # Input: Big Company LLC (defined as the "Company")
 
 # Bold styling (default):
-Big Company LLC (**Company**)
+Big Company LLC (the **Company**)
 
 # Code styling:
-Big Company LLC (`Company`)
+Big Company LLC (the `Company`)
 
 # Plain styling:
-Big Company LLC (Company)
+Big Company LLC (the Company)
 
 # Italic styling:
-Big Company LLC (*Company*)
+Big Company LLC (the *Company*)
 ```
 
 ## Comments
@@ -480,6 +512,8 @@ class MarkdownConfig:
     cross_references: CrossReferenceConfig = CrossReferenceConfig()
     include_comments: CommentStyle = CommentStyle.EXCLUDE
     heading_base_level: int = 2
+    section_indent: str = "    "  # 4 spaces by default, can be "\t" for tab
+    section_content_placement: SectionContentPlacement = SectionContentPlacement.NEWLINE
 ```
 
 #### NumberingScheme
@@ -616,14 +650,14 @@ Statement of Work description here.
 ```markdown
 # Master Services Agreement
 
-## 1. Definitions
+1. Definitions
 The following terms are defined:
-### 1.1. 
-Big Company LLC (**Company**) is the service provider.
-### 1.2. 
+    1.1. 
+Big Company LLC (the **Company**) is the service provider.
+    1.2. 
 Services means the work described in [Exhibit A](#exhibit-a).
 
-## 2. Payment
+2. Payment
 Client pays within 30 days.
 
 # Exhibit A

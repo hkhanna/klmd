@@ -52,6 +52,13 @@ class CommentStyle(Enum):
     HTML_COMMENT = "html_comment"
 
 
+class SectionContentPlacement(Enum):
+    """Section content placement options."""
+
+    INLINE = "inline"  # Content starts on same line as title/number
+    NEWLINE = "newline"  # Content starts on next line
+
+
 @dataclass
 class LevelNumbering:
     """Configuration for a single numbering level."""
@@ -377,6 +384,8 @@ class MarkdownConfig:
     cross_references: CrossReferenceConfig = field(default_factory=CrossReferenceConfig)
     include_comments: CommentStyle = CommentStyle.EXCLUDE
     heading_base_level: int = 2
+    section_indent: str = "    "  # 4 spaces by default, can be "\t" for tab
+    section_content_placement: SectionContentPlacement = SectionContentPlacement.NEWLINE
 
 
 class NumberingTracker:
@@ -587,14 +596,47 @@ class MarkdownRenderer:
 
         return "\n\n".join(parts)
 
+    def _is_inline_node(self, node: Node) -> bool:
+        """Check if a node should be rendered inline (not as a separate block)."""
+        from ..parser import CommentNode, CrossReferenceNode, DefinedTermNode, TextNode
+
+        return isinstance(
+            node, TextNode | DefinedTermNode | CrossReferenceNode | CommentNode
+        )
+
     def _render_section(self, node: SectionNode) -> str:
         """Render section node."""
         number = self.resolver.section_numbers[id(node)]
 
-        # Determine heading level
-        heading_level = self.config.heading_base_level + node.level - 1
-        heading_level = min(heading_level, 6)  # Cap at H6
-        heading_prefix = "#" * heading_level
+        # Calculate indentation based on section level
+        indent = self.config.section_indent * (node.level - 1)
+
+        # Group consecutive inline nodes together and render them as single blocks
+        children_rendered = []
+        i = 0
+        while i < len(node.children):
+            child = node.children[i]
+            rendered = self._render_node(child)
+
+            if not rendered.strip():
+                i += 1
+                continue
+
+            if self._is_inline_node(child):
+                # Collect consecutive inline nodes
+                inline_parts = [rendered]
+                i += 1
+                while i < len(node.children) and self._is_inline_node(node.children[i]):
+                    inline_rendered = self._render_node(node.children[i])
+                    if inline_rendered.strip():
+                        inline_parts.append(inline_rendered)
+                    i += 1
+                # Join inline parts without newlines
+                children_rendered.append("".join(inline_parts))
+            else:
+                # Block-level node
+                children_rendered.append(rendered)
+                i += 1
 
         # Build section heading
         if node.title:
@@ -619,23 +661,58 @@ class MarkdownRenderer:
                 self.resolver._normalize_title(node.title), ""
             )
             if anchor:
-                section_line = f"{heading_prefix} {heading_text} {{#{anchor}}}"
+                section_line = f"{indent}{heading_text} {{#{anchor}}}"
             else:
-                section_line = f"{heading_prefix} {heading_text}"
+                section_line = f"{indent}{heading_text}"
+
+            # Handle content placement for titled sections
+            if children_rendered:
+                placement = self.config.section_content_placement
+                if placement == SectionContentPlacement.INLINE:
+                    # Add period and space before anchor, then first content
+                    if anchor:
+                        # Insert period before anchor if heading doesn't have one
+                        needs_period = not heading_text.endswith(
+                            "."
+                        ) and not heading_text.endswith(")")
+                        if needs_period:
+                            # Replace the anchor pattern and rebuild with period
+                            anchor_pattern = f" {{#{anchor}}}"
+                            if anchor_pattern in section_line:
+                                new_anchor = f". {{#{anchor}}}"
+                                section_line = section_line.replace(
+                                    anchor_pattern, new_anchor
+                                )
+                        section_line += " " + children_rendered[0]
+                    else:
+                        # No anchor, just add period and content if needed
+                        needs_period = not heading_text.endswith(
+                            "."
+                        ) and not heading_text.endswith(")")
+                        if needs_period:
+                            section_line += "."
+                        section_line += " " + children_rendered[0]
+                    parts = [section_line] + children_rendered[1:]
+                else:
+                    # Content starts on new line
+                    parts = [section_line] + children_rendered
+            else:
+                # No content, just the section line
+                parts = [section_line]
         else:
-            # Section without title
+            # Section without title - content always starts immediately after number
             if number.endswith(".") or number.endswith(")"):
-                section_line = f"{heading_prefix} {number}"
+                section_start = f"{indent}{number}"
             else:
-                section_line = f"{heading_prefix} {number}."
+                section_start = f"{indent}{number}."
 
-        parts = [section_line]
-
-        # Render children
-        for child in node.children:
-            rendered = self._render_node(child)
-            if rendered.strip():
-                parts.append(rendered)
+            if children_rendered:
+                # Add first content on same line
+                section_line = section_start + " " + children_rendered[0]
+                parts = [section_line] + children_rendered[1:]
+            else:
+                # No content, just the number
+                parts = [section_start]
 
         return "\n\n".join(parts)
 
@@ -676,7 +753,7 @@ class MarkdownRenderer:
         )
 
         if node.descriptor:
-            return f"({styled_term})"
+            return f"({node.descriptor} {styled_term})"
         else:
             return f"({styled_term})"
 

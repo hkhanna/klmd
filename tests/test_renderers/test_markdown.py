@@ -25,6 +25,7 @@ from klmd.renderers.markdown import (
     NumberingScheme,
     NumberingTracker,
     NumberStyle,
+    SectionContentPlacement,
     StyleFormatter,
     TextStyle,
 )
@@ -374,8 +375,8 @@ class TestMarkdownRenderer:
         renderer = MarkdownRenderer(config)
         output = renderer.render(document)
 
-        assert "## 1. **Payment Terms** {#payment-terms}" in output
-        assert "### 1(a) *Late Fees* {#late-fees}" in output
+        assert "1. **Payment Terms** {#payment-terms}" in output
+        assert "    1(a) *Late Fees* {#late-fees}" in output
         assert "Payment is due within 30 days." in output
         assert "Interest accrues at 1.5% per month." in output
 
@@ -424,7 +425,7 @@ class TestMarkdownRenderer:
         renderer = MarkdownRenderer()
         output = renderer.render(document)
 
-        assert "Big Company LLC (**Company**) provides services." in output
+        assert "Big Company LLC (the **Company**) provides services." in output
 
     def test_comment_rendering_exclude(self) -> None:
         """Test comment rendering with EXCLUDE style."""
@@ -613,13 +614,13 @@ class TestMarkdownRenderer:
 
         # Check document structure
         assert "# Master Services Agreement" in output
-        assert "## 1. **Definitions** {#definitions}" in output
-        assert "## 2. **Payment** {#payment}" in output
+        assert "1. **Definitions** {#definitions}" in output
+        assert "2. **Payment** {#payment}" in output
         assert "# Exhibit A" in output
         assert "Statement of Work" in output
 
         # Check defined term
-        assert "(**Company**)" in output
+        assert "(the **Company**)" in output
 
         # Check cross-reference
         assert "[Section 1.](#definitions)" in output
@@ -675,7 +676,7 @@ class TestConfigurationIntegration:
         assert "(`ABC Corp`)" in output
 
     def test_heading_base_level_config(self) -> None:
-        """Test custom heading base level."""
+        """Test custom heading base level (no longer used but config still exists)."""
         document = DocumentNode(
             children=[SectionNode(level=1, title="Test", children=[])]
         )
@@ -684,7 +685,145 @@ class TestConfigurationIntegration:
         renderer = MarkdownRenderer(config)
         output = renderer.render(document)
 
-        assert "### 1. **Test** {#test}" in output  # H3 instead of H2
+        assert "1. **Test** {#test}" in output  # Plain format regardless of base level
+
+    def test_section_indent_config(self) -> None:
+        """Test custom section indentation."""
+        document = DocumentNode(
+            children=[
+                SectionNode(
+                    level=1,
+                    title="First",
+                    children=[
+                        SectionNode(
+                            level=2,
+                            title="Second",
+                            children=[SectionNode(level=3, title="Third", children=[])],
+                        )
+                    ],
+                )
+            ]
+        )
+
+        # Test default indentation (4 spaces)
+        config = MarkdownConfig()
+        renderer = MarkdownRenderer(config)
+        output = renderer.render(document)
+
+        assert "1. **First** {#first}" in output
+        assert "    1.1. *Second* {#second}" in output  # Level 2 uses italic
+        assert "        1.1.1. Third {#third}" in output  # Level 3 uses plain
+
+        # Test tab indentation
+        config_tab = MarkdownConfig(section_indent="\t")
+        renderer_tab = MarkdownRenderer(config_tab)
+        output_tab = renderer_tab.render(document)
+
+        assert "1. **First** {#first}" in output_tab
+        assert "\t1.1. *Second* {#second}" in output_tab
+        assert "\t\t1.1.1. Third {#third}" in output_tab
+
+        # Test 2-space indentation
+        config_2space = MarkdownConfig(section_indent="  ")
+        renderer_2space = MarkdownRenderer(config_2space)
+        output_2space = renderer_2space.render(document)
+
+        assert "1. **First** {#first}" in output_2space
+        assert "  1.1. *Second* {#second}" in output_2space
+        assert "    1.1.1. Third {#third}" in output_2space
+
+    def test_section_content_placement_config(self) -> None:
+        """Test section content placement options."""
+        # Test with titled section
+        titled_document = DocumentNode(
+            children=[
+                SectionNode(
+                    level=1,
+                    title="Payment Terms",
+                    children=[
+                        ParagraphNode(
+                            children=[TextNode("Payment is due within 30 days.")]
+                        ),
+                        ParagraphNode(
+                            children=[TextNode("Late fees apply after grace period.")]
+                        ),
+                    ],
+                )
+            ]
+        )
+
+        # Test NEWLINE placement (default)
+        config_newline = MarkdownConfig(
+            section_content_placement=SectionContentPlacement.NEWLINE
+        )
+        renderer_newline = MarkdownRenderer(config_newline)
+        output_newline = renderer_newline.render(titled_document)
+
+        assert "1. **Payment Terms** {#payment-terms}" in output_newline
+        assert "Payment is due within 30 days." in output_newline
+        # Content should be on separate lines
+        lines = output_newline.split("\n")
+        title_line_idx = next(
+            i for i, line in enumerate(lines) if "Payment Terms" in line
+        )
+        assert lines[title_line_idx + 1] == ""  # Empty line after title
+        assert "Payment is due within 30 days." in lines[title_line_idx + 2]
+
+        # Test INLINE placement
+        config_inline = MarkdownConfig(
+            section_content_placement=SectionContentPlacement.INLINE
+        )
+        renderer_inline = MarkdownRenderer(config_inline)
+        output_inline = renderer_inline.render(titled_document)
+
+        # First content should be on same line as title, with period after title
+        expected_inline = (
+            "1. **Payment Terms**. {#payment-terms} Payment is due within 30 days."
+        )
+        assert expected_inline in output_inline
+        # Second paragraph should be on separate line
+        assert "Late fees apply after grace period." in output_inline
+
+    def test_untitled_section_content_placement(self) -> None:
+        """Test that untitled sections always have inline content."""
+        untitled_document = DocumentNode(
+            children=[
+                SectionNode(
+                    level=1,
+                    title=None,
+                    children=[
+                        ParagraphNode(
+                            children=[TextNode("Payment is due within 30 days.")]
+                        ),
+                        ParagraphNode(
+                            children=[TextNode("Late fees apply after grace period.")]
+                        ),
+                    ],
+                )
+            ]
+        )
+
+        # Test with NEWLINE config - should still be inline for untitled sections
+        config_newline = MarkdownConfig(
+            section_content_placement=SectionContentPlacement.NEWLINE
+        )
+        renderer_newline = MarkdownRenderer(config_newline)
+        output_newline = renderer_newline.render(untitled_document)
+
+        # Content should start immediately after number
+        assert "1. Payment is due within 30 days." in output_newline
+        assert "Late fees apply after grace period." in output_newline
+
+        # Test with INLINE config - should also be inline
+        config_inline = MarkdownConfig(
+            section_content_placement=SectionContentPlacement.INLINE
+        )
+        renderer_inline = MarkdownRenderer(config_inline)
+        output_inline = renderer_inline.render(untitled_document)
+
+        # Should be identical behavior
+        assert "1. Payment is due within 30 days." in output_inline
+        assert "Late fees apply after grace period." in output_inline
 
 
 if __name__ == "__main__":
