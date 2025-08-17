@@ -631,6 +631,214 @@ Client pays within 30 days.
 Statement of Work description here.
 ```
 
+## Command Line Interface
+
+The markdown renderer can be configured through the KLMD command-line interface using a combination of quick presets, individual options, and configuration files.
+
+### Basic CLI Usage
+
+```bash
+# Basic conversion with default settings
+uv run python -m klmd document.klmd -o document.md
+
+# Using preset for common legal formatting
+uv run python -m klmd contract.klmd -p legal
+
+# Custom configuration with individual options
+uv run python -m klmd doc.klmd --section-preset legal --terms bold --comments exclude
+```
+
+### Section Numbering CLI Options
+
+Control section numbering through presets and individual customization:
+
+```bash
+# Quick presets for common numbering schemes
+--preset PRESET              # Apply preset to section numbering
+--section-preset PRESET      # Same as --preset
+
+# Available presets: decimal, legal, outline, simple, alpha_parens
+uv run python -m klmd doc.klmd -p decimal    # 1.1.1.1 format
+uv run python -m klmd doc.klmd -p legal      # 1(a)(i) format  
+uv run python -m klmd doc.klmd -p outline    # I.A.1.a format
+
+# Individual level customization
+--section-style-1 STYLE      # Title style for level 1 sections
+--section-style-2 STYLE      # Title style for level 2 sections  
+--section-style-3 STYLE      # Title style for level 3 sections
+
+# Style options: plain, bold, italic, bold_italic, code, underline
+uv run python -m klmd doc.klmd -p legal --section-style-2 italic
+```
+
+**CLI to Configuration Mapping:**
+- `--preset legal` → `MarkdownConfig(section_numbering=NumberingScheme.from_preset("legal"))`
+- `--section-style-1 bold` → Modifies `config.section_numbering.levels[0].title_style = TextStyle.BOLD`
+
+### Attachment Numbering CLI Options
+
+Configure attachment numbering independently from sections:
+
+```bash
+# Attachment presets
+--attachment-preset PRESET   # letters, decimal, simple
+
+uv run python -m klmd doc.klmd --attachment-preset letters  # A, B, C format
+uv run python -m klmd doc.klmd --attachment-preset decimal  # 1, 2, 3 format
+
+# Attachment title styling
+--attachment-style STYLE     # Title style for attachments
+
+uv run python -m klmd doc.klmd --attachment-preset letters --attachment-style bold
+```
+
+**CLI to Configuration Mapping:**
+- `--attachment-preset letters` → `MarkdownConfig(attachment_numbering=NumberingScheme.from_preset("letters"))`
+- `--attachment-style bold` → Modifies `config.attachment_numbering.levels[0].title_style = TextStyle.BOLD`
+
+### Defined Terms CLI Options
+
+Control how defined terms are styled in the output:
+
+```bash
+--terms STYLE                # Style for defined terms
+
+# Style options: plain, bold, italic, bold_italic, code, underline
+uv run python -m klmd doc.klmd --terms bold        # **Company** (default)
+uv run python -m klmd doc.klmd --terms code        # `Company`
+uv run python -m klmd doc.klmd --terms italic      # *Company*
+uv run python -m klmd doc.klmd --terms plain       # Company
+```
+
+**CLI to Configuration Mapping:**
+- `--terms bold` → `MarkdownConfig(defined_term_style=TextStyle.BOLD)`
+
+### Cross-Reference CLI Options
+
+Configure how cross-references are formatted and linked:
+
+```bash
+--xref-template TEMPLATE     # Template for cross-reference text
+--xref-links                 # Enable markdown links (default)
+--no-xref-links             # Disable markdown links
+
+# Template examples
+uv run python -m klmd doc.klmd --xref-template "Section {number}"   # Default
+uv run python -m klmd doc.klmd --xref-template "§{number}"          # Section symbol
+uv run python -m klmd doc.klmd --xref-template "({number})"         # Parentheses
+uv run python -m klmd doc.klmd --xref-template "{number}"           # Number only
+
+# Link control
+uv run python -m klmd doc.klmd --no-xref-links   # Plain text references
+uv run python -m klmd doc.klmd --xref-links      # Clickable links
+```
+
+**CLI to Configuration Mapping:**
+- `--xref-template "§{number}"` → `CrossReferenceConfig(template="§{number}")`
+- `--xref-links` → `CrossReferenceConfig(generate_links=True)`
+
+### Comment Handling CLI Options
+
+Control how comments are rendered in the output:
+
+```bash
+--comments STYLE            # Comment rendering style
+
+# Style options: exclude, blockquote, html
+uv run python -m klmd doc.klmd --comments exclude     # Remove comments (default)
+uv run python -m klmd doc.klmd --comments blockquote  # Render as > blockquotes
+uv run python -m klmd doc.klmd --comments html        # Render as <!-- HTML comments -->
+```
+
+**CLI to Configuration Mapping:**
+- `--comments blockquote` → `MarkdownConfig(include_comments=CommentStyle.BLOCKQUOTE)`
+
+### Configuration File Usage
+
+For complex configurations, use YAML or JSON files:
+
+```bash
+# Load configuration from file
+uv run python -m klmd document.klmd -c config.yaml
+uv run python -m klmd document.klmd -c config.json
+
+# CLI options override config file settings
+uv run python -m klmd doc.klmd -c config.yaml --terms code  # CLI --terms overrides file
+```
+
+**Example CLI-equivalent config.yaml:**
+```yaml
+# Equivalent to: -p legal --terms code --comments blockquote --xref-template "§{number}"
+section_numbering:
+  preset: legal
+attachment_numbering:
+  preset: letters
+defined_terms: code
+cross_references:
+  template: "§{number}"
+  links: true
+comments: blockquote
+```
+
+### Debugging and Validation CLI Options
+
+Development and troubleshooting options:
+
+```bash
+--validate                  # Parse and validate only, no output
+-v, --verbose              # Show progress information
+--debug                    # Show AST and configuration details
+
+# Validation examples
+uv run python -m klmd --validate document.klmd              # Check syntax only
+uv run python -m klmd document.klmd -v                      # Show progress
+uv run python -m klmd document.klmd --debug                 # Full debug info
+```
+
+### Complete CLI Examples
+
+#### Legal Document with Custom Formatting
+```bash
+uv run python -m klmd contract.klmd \
+  -p legal \
+  --terms bold \
+  --comments exclude \
+  --xref-template "Section {number}" \
+  --xref-links \
+  -o contract.md
+```
+
+#### Technical Manual with Decimal Numbering
+```bash
+uv run python -m klmd manual.klmd \
+  -p decimal \
+  --section-style-1 bold \
+  --section-style-2 italic \
+  --terms code \
+  --comments blockquote \
+  -o manual.md
+```
+
+#### Using Configuration File with CLI Overrides
+```bash
+# Use base config but override specific options
+uv run python -m klmd document.klmd \
+  -c legal-config.yaml \
+  --terms code \
+  --comments html \
+  -v
+```
+
+### Option Precedence
+
+Configuration is applied in this order (later options override earlier ones):
+
+1. **Default values** from `MarkdownConfig()`
+2. **Configuration file** settings (if specified with `-c`)
+3. **CLI arguments** (highest priority)
+
+This allows you to set up base configurations in files and override specific options as needed via command line arguments.
+
 ## Implementation Notes
 
 Key requirements for the renderer implementation:

@@ -39,14 +39,205 @@ Another important design choice is to avoid implementing features that templatin
 
 ## Usage
 
+KLMD can be used both as a command-line tool and as a Python library for programmatic document processing.
+
+### Installation
+
 ```bash
 # Install dependencies and sync environment
 uv sync
-
-# Render a klmd file to html
-# (not implemented yet)
-klmd examples/simple.klmd simple.html
 ```
+
+### Programmatic Usage
+
+Use KLMD as a library in your Python code:
+
+```python
+from klmd.parser import KLMDParser
+from klmd.renderers.markdown import (
+    MarkdownRenderer, 
+    MarkdownConfig, 
+    NumberingScheme,
+    TextStyle,
+    CommentStyle
+)
+
+# Parse KLMD text
+parser = KLMDParser()
+document = parser.parse("""
+[# Definitions] The following terms are defined:
+[##] Big Company LLC (defined as the "Company") is the service provider.
+[##] Services means the work described in Attachment [#statement-of-work].
+
+[# Payment] Client pays within 30 days of invoice.
+
+Attachment [#]
+==============
+
+Statement of Work goes here.
+""")
+
+# Render with default settings
+renderer = MarkdownRenderer()
+markdown_output = renderer.render(document)
+print(markdown_output)
+
+# Render with custom configuration
+config = MarkdownConfig(
+    section_numbering=NumberingScheme.from_preset("legal"),
+    defined_term_style=TextStyle.CODE,
+    include_comments=CommentStyle.BLOCKQUOTE
+)
+custom_renderer = MarkdownRenderer(config)
+custom_output = custom_renderer.render(document)
+```
+
+This approach is ideal for:
+- Integrating KLMD into larger applications
+- Batch processing multiple documents
+- Custom rendering pipelines
+- Template engines (e.g., with Jinja2)
+- API endpoints that generate legal documents
+
+#### Advanced Programmatic Examples
+
+**Template Integration with Jinja2:**
+```python
+from jinja2 import Template
+from klmd.parser import KLMDParser
+from klmd.renderers.markdown import MarkdownRenderer
+
+# KLMD template with Jinja2 variables
+template_text = """
+{{ client_name }} Services Agreement
+{{ "=" * (client_name|length + 18) }}
+
+[# Definitions]
+[##] {{ client_name }} (defined as "Client") shall mean the contracting party.
+[##] Services means {{ service_description }}.
+
+[# Payment] Client pays ${{ amount }} within {{ payment_days }} days.
+"""
+
+# Render template
+template = Template(template_text)
+klmd_text = template.render(
+    client_name="Acme Corp",
+    service_description="software development services",
+    amount="50,000",
+    payment_days=30
+)
+
+# Parse and render to markdown
+parser = KLMDParser()
+document = parser.parse(klmd_text)
+renderer = MarkdownRenderer()
+final_output = renderer.render(document)
+```
+
+**Batch Processing:**
+```python
+import os
+from pathlib import Path
+
+def process_klmd_directory(input_dir: str, output_dir: str):
+    """Convert all KLMD files in a directory to markdown."""
+    parser = KLMDParser()
+    renderer = MarkdownRenderer()
+    
+    for klmd_file in Path(input_dir).glob("*.klmd"):
+        # Parse document
+        with open(klmd_file, 'r') as f:
+            document = parser.parse(f.read())
+        
+        # Render to markdown
+        markdown = renderer.render(document)
+        
+        # Write output
+        output_file = Path(output_dir) / f"{klmd_file.stem}.md"
+        with open(output_file, 'w') as f:
+            f.write(markdown)
+        
+        print(f"Converted {klmd_file} → {output_file}")
+```
+
+### Command-Line Usage
+
+For standalone document conversion, use the CLI:
+
+#### Basic Usage
+
+```bash
+# Convert KLMD to markdown (default format)
+uv run python -m klmd document.klmd -o document.md
+
+# Use stdin/stdout for piping
+cat contract.klmd | uv run python -m klmd - > contract.md
+
+# Validate syntax without generating output
+uv run python -m klmd --validate document.klmd
+```
+
+### Quick Formatting Presets
+
+```bash
+# Legal numbering (1(a)(i)) with standard formatting
+uv run python -m klmd contract.klmd -p legal
+
+# Decimal numbering (1.1.1) for technical documents
+uv run python -m klmd manual.klmd -p decimal
+
+# Outline format (I.A.1.a) for formal documents
+uv run python -m klmd policy.klmd -p outline
+```
+
+### Configuration Files
+
+For complex formatting requirements, use YAML or JSON configuration files:
+
+```bash
+# Using YAML configuration
+uv run python -m klmd document.klmd -c config.yaml
+
+# Using JSON configuration  
+uv run python -m klmd document.klmd -c config.json
+```
+
+**Example config.yaml:**
+```yaml
+section_numbering:
+  preset: legal
+  customize:
+    2:
+      title_style: italic
+      
+defined_terms: bold
+cross_references:
+  template: "Section {number}"
+  links: true
+comments: exclude
+```
+
+### Common Options
+
+```bash
+# Custom defined term styling
+uv run python -m klmd doc.klmd --terms code
+
+# Control comment rendering
+uv run python -m klmd doc.klmd --comments blockquote
+
+# Custom cross-reference format
+uv run python -m klmd doc.klmd --xref-template "§{number}"
+
+# Verbose output with progress information
+uv run python -m klmd doc.klmd -v
+
+# Debug mode with AST information
+uv run python -m klmd doc.klmd --debug
+```
+
+For complete CLI documentation including renderer-specific options, see `docs/renderers/markdown.md`.
 
 ## Specification
 
