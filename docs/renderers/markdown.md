@@ -1,66 +1,66 @@
 # Markdown Renderer
 
-The Markdown renderer is KLMD's baseline renderer that converts the parsed AST to standard Markdown with resolved numbering. It serves as both a functional output format and a reference implementation for developers building other renderers (HTML, docx, etc.).
+The Markdown renderer converts the parsed KLMD AST to standard Markdown with resolved numbering. It serves as both a functional output format and a reference implementation for developers building other renderers (HTML, docx, etc.).
 
-## Purpose and Design
+## Configuration Overview
 
-The Markdown renderer demonstrates core rendering concepts:
-- Resolving section and attachment numbering
-- Configurable text styling for semantic elements
-- Handling cross-references and defined terms
-- Managing complex structures like signature blocks
-
-This simple, configurable approach provides a foundation that other renderers can build upon.
-
-## Overview
-
-The markdown renderer is configured through the `MarkdownConfig` class, which controls how each KLMD element is processed and styled.
-
-### Complete Configuration Example
+The renderer is configured through `MarkdownConfig`, which controls how each KLMD element is processed and styled.
 
 ```python
-# Create custom numbering with per-level styling
-section_numbering = NumberingScheme(
-    levels=[
-        LevelNumbering(ARABIC, suffix="", include_parent=False, title_style=TextStyle.BOLD),
-        LevelNumbering(ALPHA_LOWER, prefix="(", suffix=")", include_parent=True, title_style=TextStyle.ITALIC),
-        LevelNumbering(ARABIC, prefix=".", suffix="", include_parent=True, title_style=TextStyle.PLAIN)
-    ]
+from klmd.renderers.markdown import (
+    MarkdownRenderer,
+    MarkdownConfig,
+    NumberingScheme,
+    LevelNumbering,
+    CrossReferenceConfig,
+    TextStyle,
+    CommentStyle,
+    SectionContentPlacement,
+    AnchorGeneration,
 )
+from klmd.renderers.markdown import NumberStyle
 
-# Attachment numbering (simpler, single-level)
-attachment_numbering = NumberingScheme(
-    levels=[LevelNumbering(ALPHA_UPPER, include_parent=False, title_style=TextStyle.BOLD)]
-)
-
-# Overall renderer configuration
+# Complete configuration example
 config = MarkdownConfig(
-    section_numbering=section_numbering,
-    attachment_numbering=attachment_numbering,
+    section_numbering=NumberingScheme.from_preset("legal"),
+    attachment_numbering=NumberingScheme.from_preset("letters"),
     defined_term_style=TextStyle.BOLD,
     cross_references=CrossReferenceConfig(template="Section {number}", generate_links=True),
     include_comments=CommentStyle.EXCLUDE,
-    heading_base_level=2
+    heading_base_level=2,
+    section_indent="    ",
+    section_content_placement=SectionContentPlacement.INLINE,
+    anchor_generation=AnchorGeneration.CROSS_REFERENCED,
 )
 
 renderer = MarkdownRenderer(config)
 ```
 
-This configuration produces:
-- **Section 1** with bold titles, subsections like **1(a)** with italic titles, sub-subsections like **1(a).1** with plain titles
-- **Attachment A**, **Attachment B** etc. with bold titles
-- Defined terms rendered as **bold text**
-- Comments excluded from output
-- Cross-references as clickable links
-- Sections start at H2 level in markdown
+### MarkdownConfig Reference
+
+```python
+@dataclass
+class MarkdownConfig:
+    section_numbering: NumberingScheme = NumberingScheme.from_preset("decimal")
+    attachment_numbering: NumberingScheme = NumberingScheme.from_preset("letters")
+    defined_term_style: TextStyle = TextStyle.BOLD
+    cross_references: CrossReferenceConfig = CrossReferenceConfig()
+    include_comments: CommentStyle = CommentStyle.EXCLUDE
+    heading_base_level: int = 2
+    section_indent: str = "    "  # 4 spaces by default, can be "\t" for tab
+    section_content_placement: SectionContentPlacement = SectionContentPlacement.NEWLINE
+    anchor_generation: AnchorGeneration = AnchorGeneration.CROSS_REFERENCED
+```
 
 ## Section Numbering
 
+*Syntax: [spec.md § Section Numbers](../spec.md#2-section-numbers)*
+
 Section numbering is the most complex aspect of the renderer, supporting flexible per-level configuration through presets and custom specifications.
 
-### Configuration System
+### LevelNumbering
 
-The numbering system allows you to specify the format for each hierarchy level independently, enabling complex patterns like `1(a).1` or `I.A.1.a`.
+Each hierarchy level is configured independently:
 
 ```python
 @dataclass
@@ -70,32 +70,25 @@ class LevelNumbering:
     suffix: str = ""        # Text after number, e.g., ")" or "."
     include_parent: bool = True  # Whether to include parent number at this level
     title_style: TextStyle = TextStyle.BOLD  # How to style the section title
-    
-@dataclass
-class NumberingScheme:
-    levels: List[LevelNumbering]
 ```
 
 ### Available Presets
 
-- **decimal**: `1.1.1.1` (hierarchical Arabic with dots) - Good for technical documents
-- **legal**: `1(a)(i)(A)` (mixed with parentheses) - Standard legal document format
-- **outline**: `I.A.1.a` (traditional outline format) - Academic and formal documents
-- **simple**: `1, 2, 3` (non-hierarchical Arabic) - Simple numbered lists
-- **alpha_parens**: `(a)(i)(1)` (alphabetic with parentheses) - Alternative legal format
-- **letters**: `A, B, C` (single-level letters) - Used for attachments/exhibits
+| Preset | Format | Use case |
+|--------|--------|----------|
+| `decimal` | `1.1.1.1` | Technical documents |
+| `legal` | `1(a)(i)(A)` | Standard legal format |
+| `outline` | `I.A.1.a` | Academic and formal documents |
+| `simple` | `1, 2, 3` | Simple numbered lists |
+| `alpha_parens` | `(a)(i)(1)` | Alternative legal format |
+| `letters` | `A, B, C` | Attachments/exhibits |
 
-Each preset includes appropriate default title styling:
-- Top levels typically use **bold** titles
-- Mid levels use *italic* titles  
-- Deeper levels use plain titles
-- Can be overridden with `customize_level()`
+Each preset includes appropriate default title styling (bold for top levels, italic for mid levels, plain for deeper levels). These can be overridden with `customize_level()`.
 
 ### Configuration Examples
 
 #### Using Presets
 ```python
-# Quick setup with legal numbering
 config = MarkdownConfig(
     section_numbering=NumberingScheme.from_preset("legal"),
     attachment_numbering=NumberingScheme.from_preset("letters")
@@ -123,37 +116,26 @@ NumberingScheme(
 )
 ```
 
-#### Attachment Numbering
-Attachments use simpler numbering since they don't support hierarchy:
-
+#### Preset with Level Customization
 ```python
-# Letters: A, B, C
-attachment_numbering = NumberingScheme(
-    levels=[LevelNumbering(ALPHA_UPPER, include_parent=False)]
-)
+scheme = NumberingScheme.from_preset("legal")
+scheme.customize_level(2, LevelNumbering(
+    NumberStyle.ROMAN_LOWER,
+    prefix="[",
+    suffix="]",
+    title_style=TextStyle.CODE
+))
 
-# Numbers with periods: 1., 2., 3.
-attachment_numbering = NumberingScheme(
-    levels=[LevelNumbering(ARABIC, suffix=".", include_parent=False)]
-)
+config = MarkdownConfig(section_numbering=scheme)
 ```
 
-### Rendering Behavior
+### Indentation
 
-#### Section Output Format
-```markdown
-1. Payment Terms
-```
+Sections are indented according to their hierarchy level using `section_indent` (default: 4 spaces). Set to `"\t"` for tab indentation.
 
-- **Number calculation**: Track hierarchical position in document
-- **Title formatting**: Apply configured text styling from `title_style`
-- **Anchor generation**: `{#payment-terms}` for cross-reference targets
-- **Number placement**: `1. Title` format with number before title
-- **Content placement**: Configurable positioning of section content relative to titles
+### Section Content Placement
 
-#### Section Content Placement
-
-Section content can be positioned in two ways relative to the section title or number:
+Controls where section body text appears relative to the title:
 
 **NEWLINE (default)**: Content starts on the next line after the title
 ```markdown
@@ -161,75 +143,37 @@ Section content can be positioned in two ways relative to the section title or n
 Payment is due within 30 days.
 ```
 
-**INLINE**: Content starts on the same line as the title, with a period and space separator
+**INLINE**: Content starts on the same line, separated by a period and space
 ```markdown
 1. Payment Terms. Payment is due within 30 days.
 ```
 
-**Untitled Sections**: Content always starts immediately after the number, regardless of placement setting
+Untitled sections always place content immediately after the number, regardless of this setting:
 ```markdown
 1. Payment is due within 30 days.
 ```
 
-This is controlled by the `section_content_placement` configuration option:
-
 ```python
-# Default behavior (content on new line)
-config = MarkdownConfig(section_content_placement=SectionContentPlacement.NEWLINE)
-
-# Inline behavior (content after title with period)
 config = MarkdownConfig(section_content_placement=SectionContentPlacement.INLINE)
 ```
 
-#### Anchor Generation
+### Anchor Generation
 
-Section anchors enable linking to specific sections within documents. The renderer can generate anchors in three modes:
+Section anchors enable linking to specific sections. Three modes are available:
 
-**CROSS_REFERENCED (default)**: Only generate anchors for sections that are actually referenced elsewhere in the document
-```markdown
-1. **Payment Terms** {#payment-terms}  # Has anchor because it's referenced
-2. **Definitions**                      # No anchor because it's not referenced
-```
-
-**ALL**: Generate anchors for all sections regardless of whether they're referenced
-```markdown
-1. **Payment Terms** {#payment-terms}
-2. **Definitions** {#definitions}
-```
-
-**NONE**: Never generate anchors
-```markdown
-1. **Payment Terms**
-2. **Definitions**
-```
-
-This is controlled by the `anchor_generation` configuration option:
+| Mode | Behavior |
+|------|----------|
+| `CROSS_REFERENCED` (default) | Anchors only for sections referenced elsewhere |
+| `ALL` | Anchors for every section |
+| `NONE` | No anchors |
 
 ```python
-# Default behavior (only cross-referenced sections get anchors)
 config = MarkdownConfig(anchor_generation=AnchorGeneration.CROSS_REFERENCED)
-
-# Generate anchors for all sections
-config = MarkdownConfig(anchor_generation=AnchorGeneration.ALL)
-
-# Never generate anchors
-config = MarkdownConfig(anchor_generation=AnchorGeneration.NONE)
 ```
 
-**Benefits of CROSS_REFERENCED mode:**
-- Cleaner output with fewer unnecessary anchors
-- Only generates anchors that are actually needed for navigation
-- Reduces clutter in the markdown source
-- Still supports all cross-reference functionality
+### Rendered Examples
 
-#### Document and Attachment Titles
-- **Heading level**: Document and attachment titles use H1 (`#`)
-- **Numbering placeholder**: Resolve `[#]` to actual attachment number
-- **Underline handling**: Convert `===` to heading or preserve as text decoration
-
-#### Hierarchical Examples
-
-##### Legal Preset (1(a)(i))
+#### Legal Preset (1(a)(i))
 ```klmd
 [# First Section]
 [## Subsection]
@@ -238,7 +182,7 @@ config = MarkdownConfig(anchor_generation=AnchorGeneration.NONE)
 [# Second Section]
 ```
 
-**Renders to:**
+Renders to:
 ```markdown
 1. First Section
     1(a). Subsection
@@ -247,21 +191,33 @@ config = MarkdownConfig(anchor_generation=AnchorGeneration.NONE)
 2. Second Section
 ```
 
-Note to Claude: Let's have the sections rendered indended with a tab or a number of spaces, configurable.
+## Document and Attachment Titles
 
-##### Custom Format (1(a).1)
-**Renders to:**
-```markdown
-1. First Section
-    1(a). Subsection
-    1(b). Another Subsection
-        1(b).1. Sub-subsection
-2. Second Section
+*Syntax: [spec.md § Document and Attachment Titles](../spec.md#3-document-and-attachment-titles)*
+
+- **Heading level**: Document and attachment titles render as H1 (`#`)
+- **Numbering placeholder**: `[#]` in titles resolves to the actual attachment number
+- **Underline handling**: `===` underlines are converted to heading syntax
+
+## Attachment Numbering
+
+*Syntax: [spec.md § Attachment Numbering](../spec.md#4-attachment-numbering)*
+
+Attachments use simpler, single-level numbering:
+
+```python
+# Letters: A, B, C (default)
+attachment_numbering = NumberingScheme.from_preset("letters")
+
+# Numbers with periods: 1., 2., 3.
+attachment_numbering = NumberingScheme(
+    levels=[LevelNumbering(ARABIC, suffix=".", include_parent=False)]
+)
 ```
 
 ## Cross-References
 
-Cross-references allow linking to sections and attachments by title. The renderer resolves these references and formats them according to your configuration.
+*Syntax: [spec.md § Cross References](../spec.md#5-cross-references)*
 
 ### Configuration
 
@@ -272,47 +228,23 @@ class CrossReferenceConfig:
     generate_links: bool = True            # Whether to create markdown links
 ```
 
-#### Template Options
-The `template` field supports these placeholders:
-- `{number}` - The resolved section/attachment number
-- `{title}` - The target section title (optional)
+### Template Variables
+
+- `{number}` — The resolved section/attachment number
+- `{title}` — The target section title
 
 Common templates:
-- `"Section {number}"` → "Section 1.2" 
-- `"{number}"` → "1.2"
-- `"({number})"` → "(1.2)"
-- `"§{number}"` → "§1.2"
-- `"Section {number}: {title}"` → "Section 1.2: Payment Terms"
 
-#### Configuration Examples
-```python
-# Standard legal style with links
-cross_ref_config = CrossReferenceConfig(
-    template="Section {number}",
-    generate_links=True
-)
+| Template | Output |
+|----------|--------|
+| `"Section {number}"` | Section 1.2 |
+| `"§{number}"` | §1.2 |
+| `"({number})"` | (1.2) |
+| `"{number}"` | 1.2 |
+| `"Section {number}: {title}"` | Section 1.2: Payment Terms |
 
-# Simple numbering without "Section" prefix
-cross_ref_config = CrossReferenceConfig(
-    template="({number})",
-    generate_links=True
-)
+### Output Examples
 
-# Plain text references (no links)
-cross_ref_config = CrossReferenceConfig(
-    template="Section {number}",
-    generate_links=False
-)
-```
-
-### Rendering Behavior
-
-#### Resolution Process
-- **Resolution**: Look up target section number from title
-- **Template application**: Apply configured format template
-- **Link generation**: Create markdown links to section anchors when enabled
-
-#### Output Examples
 ```markdown
 # Input: [#payment-terms]
 
@@ -322,80 +254,51 @@ cross_ref_config = CrossReferenceConfig(
 # With generate_links=False:
 Section 2
 
-# With template="({number})":
-[(2)](#payment-terms)
-
 # With template="§{number}":
 [§2](#payment-terms)
 ```
 
-#### Number Formatting in Cross-References
+### Period Stripping
 
-Cross-references automatically strip trailing periods from section numbers to avoid awkward constructions like "Section 3." However, meaningful suffixes like parentheses are preserved:
+Cross-references automatically strip trailing periods from section numbers to avoid awkward constructions like "Section 3.":
 
 - Section numbered "3." renders as "Section 3" in cross-references
-- Section numbered "3(a)" renders as "Section 3(a)" in cross-references
-
-This ensures that:
-- Simple numbered sections read naturally: "See Section 1 for details"
-- Complex numbered sections preserve their structure: "Refer to Section 1(a)(ii)"
+- Section numbered "3(a)" preserves the suffix: "Section 3(a)"
 
 ## Defined Terms
 
-Defined terms control how the extracted term appears in the rendered output using the same `TextStyle` system as section titles.
+*Syntax: [spec.md § Defined Terms](../spec.md#6-defined-terms)*
 
 ### Configuration
 
 ```python
 class TextStyle(Enum):
     PLAIN = "plain"           # No formatting
-    BOLD = "bold"             # **Title**
-    ITALIC = "italic"         # *Title*
-    BOLD_ITALIC = "bold_italic"  # ***Title***
-    CODE = "code"             # `Title`
-    UNDERLINE = "underline"   # <u>Title</u> (HTML in markdown)
+    BOLD = "bold"             # **Term**
+    ITALIC = "italic"         # *Term*
+    BOLD_ITALIC = "bold_italic"  # ***Term***
+    CODE = "code"             # `Term`
+    UNDERLINE = "underline"   # <u>Term</u>
 ```
 
-#### Configuration Examples
 ```python
-# Bold defined terms (default for legal emphasis)
 config = MarkdownConfig(defined_term_style=TextStyle.BOLD)
-
-# Code-style defined terms
-config = MarkdownConfig(defined_term_style=TextStyle.CODE)
-
-# Plain defined terms (no special formatting)
-config = MarkdownConfig(defined_term_style=TextStyle.PLAIN)
 ```
 
-### Rendering Behavior
+### Output Examples
 
-#### Processing
-- **Term extraction**: Pull quoted term from DTI syntax
-- **Referent identification**: Extract preceding text that term defines
-- **Styling application**: Apply configured text formatting
-- **Descriptor handling**: Include descriptors like "the", "any"
-
-#### Output Examples
 ```markdown
 # Input: Big Company LLC (defined as the "Company")
 
-# Bold styling (default):
-Big Company LLC (the **Company**)
-
-# Code styling:
-Big Company LLC (the `Company`)
-
-# Plain styling:
-Big Company LLC (the Company)
-
-# Italic styling:
-Big Company LLC (the *Company*)
+# Bold (default):  Big Company LLC (the **Company**)
+# Code:            Big Company LLC (the `Company`)
+# Italic:          Big Company LLC (the *Company*)
+# Plain:           Big Company LLC (the Company)
 ```
 
 ## Comments
 
-Comments in KLMD documents can be handled in several ways during rendering, from complete exclusion to various inclusion styles that preserve the comment content while adapting it to markdown format.
+*Syntax: [spec.md § Comments](../spec.md#7-comments)*
 
 ### Configuration
 
@@ -403,91 +306,59 @@ Comments in KLMD documents can be handled in several ways during rendering, from
 class CommentStyle(Enum):
     EXCLUDE = "exclude"           # Remove comments entirely (default)
     BLOCKQUOTE = "blockquote"     # Render as markdown blockquotes
-    HTML_COMMENT = "html_comment" # Render as HTML comments in markdown
+    HTML_COMMENT = "html_comment" # Render as HTML comments
 ```
 
-#### Configuration Examples
 ```python
-# Exclude comments from output (default)
-config = MarkdownConfig(include_comments=CommentStyle.EXCLUDE)
-
-# Include comments as blockquotes
 config = MarkdownConfig(include_comments=CommentStyle.BLOCKQUOTE)
-
-# Include as HTML comments (visible in source but not rendered)
-config = MarkdownConfig(include_comments=CommentStyle.HTML_COMMENT)
 ```
 
-### Rendering Behavior
+### Output Examples
 
-#### Comment Positioning
-Comments are rendered at their original position in the document flow:
-- **Inline comments**: Appear immediately after the content they follow
-- **Standalone comments**: Appear as separate elements in the document structure
-- **Block comments**: Maintain their block-level positioning
-
-#### Output Examples
-
-##### Line Comments
+#### Line Comments
 ```markdown
-# Input KLMD:
+# Input:
 [# Payment Terms] Client pays within 30 days.
 // Note: Add late payment penalties
 
-# EXCLUDE (default):
-## 1. Payment Terms
-Client pays within 30 days.
-
-# BLOCKQUOTE:
-## 1. Payment Terms
-Client pays within 30 days.
-> Note: Add late payment penalties
-
-# HTML_COMMENT:
-## 1. Payment Terms
-Client pays within 30 days.
-<!-- Note: Add late payment penalties -->
+# EXCLUDE:     (comment removed)
+# BLOCKQUOTE:  > Note: Add late payment penalties
+# HTML:        <!-- Note: Add late payment penalties -->
 ```
 
-##### Block Comments
+#### Block Comments
 ```markdown
-# Input KLMD:
-[# Payment Terms] Client pays within 30 days.
-/* 
+# Input:
+/*
 This section needs review:
 - Check late fees
 - Verify payment methods
 */
 
-# EXCLUDE (default):
-## 1. Payment Terms
-Client pays within 30 days.
-
 # BLOCKQUOTE:
-## 1. Payment Terms
-Client pays within 30 days.
 > This section needs review:
 > - Check late fees
 > - Verify payment methods
 
-# HTML_COMMENT:
-## 1. Payment Terms
-Client pays within 30 days.
-<!-- 
+# HTML:
+<!--
 This section needs review:
 - Check late fees
 - Verify payment methods
 -->
 ```
 
+Comments are rendered at their original position in the document flow (inline, standalone, or block-level).
+
 ## Signature Blocks
 
-Signature blocks have no configuration options - they are rendered consistently based on their structure (individual vs entity signatures).
+*Syntax: [spec.md § Signature Blocks](../spec.md#8-signature-blocks)*
 
-### Rendering Behavior
+Signature blocks have no configuration options—they are rendered consistently based on their structure.
 
-#### Individual Signatures
-Individual signatures render with a signature line (20 underscores) above the party name.
+### Individual Signatures
+
+Rendered with a signature line (20 underscores) above the party name.
 
 ```markdown
 # Input:
@@ -501,8 +372,9 @@ John Smith
 Address: 123 Main St
 ```
 
-#### Entity Signatures
-Entity signatures render the entity name in UPPERCASE, convert the "By:" field to "Name:", and add a signature line with 20 underscores after "By:".
+### Entity Signatures
+
+Entity name in UPPERCASE, `By:` field converted to `Name:`, signature line added.
 
 ```markdown
 # Input:
@@ -515,12 +387,13 @@ Title: CEO
 ABC CORPORATION
 
 By: ____________________
-Name: John Smith  
+Name: John Smith
 Title: CEO
 ```
 
-#### Nested Entity Signatures
-For nested entities, only the primary entity name is rendered in UPPERCASE. Chain of authority entities remain as "By:" fields, while the final human signatory gets converted to "Name:" with a signature line.
+### Nested Entity Signatures
+
+Primary entity in UPPERCASE. Chain of authority entities as `By:` fields. Final human signatory gets `Name:` with signature line.
 
 ```markdown
 # Input:
@@ -533,112 +406,41 @@ By Entity: ABC Management LLC, its General Partner
 
 # Output:
 INVESTMENT FUND LP
-By: ABC Management LLC, its General Partner  
-By: XYZ Holdings Inc., its Managing Member  
+By: ABC Management LLC, its General Partner
+By: XYZ Holdings Inc., its Managing Member
 
 By: ____________________
 Name: John Smith
 Title: President
 ```
 
-## Implementation Architecture
-
-### Core Classes
-
-#### MarkdownRenderer
-```python
-class MarkdownRenderer:
-    def __init__(self, config: MarkdownConfig = None)
-    def render(self, document: DocumentNode) -> str
-    def render_node(self, node: Node) -> str
-    def resolve_numbering(self, document: DocumentNode)
-```
-
-#### MarkdownConfig
-```python
-@dataclass
-class MarkdownConfig:
-    section_numbering: NumberingScheme = NumberingScheme.from_preset("decimal")
-    attachment_numbering: NumberingScheme = NumberingScheme.from_preset("letters")
-    defined_term_style: TextStyle = TextStyle.BOLD
-    cross_references: CrossReferenceConfig = CrossReferenceConfig()
-    include_comments: CommentStyle = CommentStyle.EXCLUDE
-    heading_base_level: int = 2
-    section_indent: str = "    "  # 4 spaces by default, can be "\t" for tab
-    section_content_placement: SectionContentPlacement = SectionContentPlacement.NEWLINE
-    anchor_generation: AnchorGeneration = AnchorGeneration.CROSS_REFERENCED
-```
-
-#### NumberingScheme
-```python
-@dataclass
-class NumberingScheme:
-    levels: List[LevelNumbering]
-    
-    @classmethod
-    def from_preset(cls, preset: str) -> 'NumberingScheme':
-        """Create numbering scheme from preset name"""
-        
-    def customize_level(self, level: int, config: LevelNumbering):
-        """Override specific level while keeping rest of scheme"""
-        
-    def format_number(self, position: List[int]) -> str:
-        """Generate formatted number string for given position"""
-```
-
-#### LevelNumbering
-```python
-@dataclass
-class LevelNumbering:
-    style: NumberStyle
-    prefix: str = ""
-    suffix: str = ""
-    include_parent: bool = True
-    title_style: TextStyle = TextStyle.BOLD
-    
-    def format_value(self, value: int) -> str:
-        """Convert integer to styled representation"""
-```
-
-### Helper Classes
-
-#### NumberingTracker
-- Track current position at each hierarchy level
-- Apply NumberingScheme configuration to generate formatted numbers
-- Handle attachment numbering across document
-- Reset section numbering within attachments
-- Support for non-contiguous numbering (skipping levels)
-
-#### NumberingResolver
-- Traverse document AST and assign numbers to sections
-- Build cross-reference mapping from titles to numbers
-- Handle complex cases like forward references
-- Validate numbering consistency
-
-#### StyleFormatter
-- Apply text styling (bold, italic, etc.)
-- Generate markdown formatting codes
-- Handle edge cases like nested formatting
-
-## Usage Examples
+## Python API
 
 ### Basic Usage
-```python
-from klmd.renderers.markdown import MarkdownRenderer
-from klmd.parser import KLMDParser
 
-# Parse KLMD document
+```python
+from klmd.parser import KLMDParser
+from klmd.renderers.markdown import MarkdownRenderer
+
 parser = KLMDParser()
 document = parser.parse(klmd_text)
 
-# Render to markdown
 renderer = MarkdownRenderer()
 markdown_output = renderer.render(document)
 ```
 
 ### Configuration with Presets
+
 ```python
-# Use a preset numbering scheme (presets include default title styling)
+from klmd.renderers.markdown import (
+    MarkdownRenderer,
+    MarkdownConfig,
+    NumberingScheme,
+    TextStyle,
+    CommentStyle,
+    CrossReferenceConfig,
+)
+
 config = MarkdownConfig(
     section_numbering=NumberingScheme.from_preset("legal"),
     defined_term_style=TextStyle.CODE,
@@ -646,11 +448,14 @@ config = MarkdownConfig(
     cross_references=CrossReferenceConfig(template="({number})", generate_links=False)
 )
 renderer = MarkdownRenderer(config)
+output = renderer.render(document)
 ```
 
-### Custom Numbering Configuration
+### Custom Numbering
+
 ```python
-# Create custom numbering scheme for 1(a).1 format with title styling
+from klmd.renderers.markdown import NumberingScheme, LevelNumbering, NumberStyle
+
 custom_scheme = NumberingScheme(
     levels=[
         LevelNumbering(NumberStyle.ARABIC, suffix="", include_parent=False, title_style=TextStyle.BOLD),
@@ -663,276 +468,85 @@ config = MarkdownConfig(section_numbering=custom_scheme)
 renderer = MarkdownRenderer(config)
 ```
 
-### Preset with Level Customization
+### Jinja2 Integration
+
 ```python
-# Start with legal preset, but customize level 2
-scheme = NumberingScheme.from_preset("legal")
-scheme.customize_level(2, LevelNumbering(
-    NumberStyle.ROMAN_LOWER, 
-    prefix="[", 
-    suffix="]",
-    title_style=TextStyle.CODE
-))
+from jinja2 import Template
+from klmd.parser import KLMDParser
+from klmd.renderers.markdown import MarkdownRenderer
 
-config = MarkdownConfig(section_numbering=scheme)
-renderer = MarkdownRenderer(config)
+template_text = """
+{{ client_name }} Services Agreement
+{{ "=" * (client_name|length + 18) }}
+
+[# Definitions]
+[##] {{ client_name }} (defined as "Client") shall mean the contracting party.
+[##] Services means {{ service_description }}.
+
+[# Payment] Client pays ${{ amount }} within {{ payment_days }} days.
+"""
+
+template = Template(template_text)
+klmd_text = template.render(
+    client_name="Acme Corp",
+    service_description="software development services",
+    amount="50,000",
+    payment_days=30
+)
+
+parser = KLMDParser()
+document = parser.parse(klmd_text)
+renderer = MarkdownRenderer()
+final_output = renderer.render(document)
 ```
 
-### Complete Example
+### Batch Processing
 
-#### Input KLMD
-```klmd
-Master Services Agreement
-=========================
+```python
+from pathlib import Path
+from klmd.parser import KLMDParser
+from klmd.renderers.markdown import MarkdownRenderer
 
-[# Definitions] The following terms are defined:
-[##] Big Company LLC (defined as the "Company") is the service provider.
-[##] Services means the work described in Exhibit [#statement-of-work].
+def process_klmd_directory(input_dir: str, output_dir: str):
+    """Convert all KLMD files in a directory to markdown."""
+    parser = KLMDParser()
+    renderer = MarkdownRenderer()
 
-// Note: Add more definitions
+    for klmd_file in Path(input_dir).glob("*.klmd"):
+        with open(klmd_file, 'r') as f:
+            document = parser.parse(f.read())
 
-[# Payment] Client pays within 30 days.
+        markdown = renderer.render(document)
 
-Exhibit [#]
-===========
+        output_file = Path(output_dir) / f"{klmd_file.stem}.md"
+        with open(output_file, 'w') as f:
+            f.write(markdown)
 
-Statement of Work description here.
+        print(f"Converted {klmd_file} -> {output_file}")
 ```
 
-#### Output Markdown
-```markdown
-# Master Services Agreement
+## CLI
 
-1. Definitions
-The following terms are defined:
-    1.1. 
-Big Company LLC (the **Company**) is the service provider.
-    1.2. 
-Services means the work described in [Exhibit A](#exhibit-a).
+For command-line usage and options, see the [CLI Reference](../cli.md).
 
-2. Payment
-Client pays within 30 days.
+## Implementation Architecture
 
-# Exhibit A
+### Core Classes
 
-Statement of Work description here.
-```
+- **MarkdownRenderer** — Main renderer; `render(document)` returns markdown string
+- **MarkdownConfig** — Configuration dataclass controlling all rendering behaviors
+- **NumberingScheme** — Hierarchical numbering with preset support and `from_preset()` / `customize_level()` / `format_number()` methods
+- **LevelNumbering** — Per-level numbering configuration with `format_value()`
 
-## Command Line Interface
+### Helper Classes
 
-The markdown renderer can be configured through the KLMD command-line interface using a combination of quick presets, individual options, and configuration files.
+- **NumberingTracker** — Tracks current position at each hierarchy level, applies numbering scheme, handles attachment numbering and section resets
+- **NumberingResolver** — First-pass AST traversal to assign numbers and build cross-reference mapping
+- **StyleFormatter** — Applies text styling (bold, italic, etc.) and generates markdown formatting
 
-### Basic CLI Usage
+### Rendering Process
 
-```bash
-# Basic conversion with default settings
-uv run python -m klmd document.klmd -o document.md
-
-# Using preset for common legal formatting
-uv run python -m klmd contract.klmd -p legal
-
-# Custom configuration with individual options
-uv run python -m klmd doc.klmd --section-preset legal --terms bold --comments exclude
-```
-
-### Section Numbering CLI Options
-
-Control section numbering through presets and individual customization:
-
-```bash
-# Quick presets for common numbering schemes
---preset PRESET              # Apply preset to section numbering
---section-preset PRESET      # Same as --preset
-
-# Available presets: decimal, legal, outline, simple, alpha_parens
-uv run python -m klmd doc.klmd -p decimal    # 1.1.1.1 format
-uv run python -m klmd doc.klmd -p legal      # 1(a)(i) format  
-uv run python -m klmd doc.klmd -p outline    # I.A.1.a format
-
-# Individual level customization
---section-style-1 STYLE      # Title style for level 1 sections
---section-style-2 STYLE      # Title style for level 2 sections  
---section-style-3 STYLE      # Title style for level 3 sections
-
-# Style options: plain, bold, italic, bold_italic, code, underline
-uv run python -m klmd doc.klmd -p legal --section-style-2 italic
-```
-
-**CLI to Configuration Mapping:**
-- `--preset legal` → `MarkdownConfig(section_numbering=NumberingScheme.from_preset("legal"))`
-- `--section-style-1 bold` → Modifies `config.section_numbering.levels[0].title_style = TextStyle.BOLD`
-
-### Attachment Numbering CLI Options
-
-Configure attachment numbering independently from sections:
-
-```bash
-# Attachment presets
---attachment-preset PRESET   # letters, decimal, simple
-
-uv run python -m klmd doc.klmd --attachment-preset letters  # A, B, C format
-uv run python -m klmd doc.klmd --attachment-preset decimal  # 1, 2, 3 format
-
-# Attachment title styling
---attachment-style STYLE     # Title style for attachments
-
-uv run python -m klmd doc.klmd --attachment-preset letters --attachment-style bold
-```
-
-**CLI to Configuration Mapping:**
-- `--attachment-preset letters` → `MarkdownConfig(attachment_numbering=NumberingScheme.from_preset("letters"))`
-- `--attachment-style bold` → Modifies `config.attachment_numbering.levels[0].title_style = TextStyle.BOLD`
-
-### Defined Terms CLI Options
-
-Control how defined terms are styled in the output:
-
-```bash
---terms STYLE                # Style for defined terms
-
-# Style options: plain, bold, italic, bold_italic, code, underline
-uv run python -m klmd doc.klmd --terms bold        # **Company** (default)
-uv run python -m klmd doc.klmd --terms code        # `Company`
-uv run python -m klmd doc.klmd --terms italic      # *Company*
-uv run python -m klmd doc.klmd --terms plain       # Company
-```
-
-**CLI to Configuration Mapping:**
-- `--terms bold` → `MarkdownConfig(defined_term_style=TextStyle.BOLD)`
-
-### Cross-Reference CLI Options
-
-Configure how cross-references are formatted and linked:
-
-```bash
---xref-template TEMPLATE     # Template for cross-reference text
---xref-links                 # Enable markdown links (default)
---no-xref-links             # Disable markdown links
-
-# Template examples
-uv run python -m klmd doc.klmd --xref-template "Section {number}"   # Default
-uv run python -m klmd doc.klmd --xref-template "§{number}"          # Section symbol
-uv run python -m klmd doc.klmd --xref-template "({number})"         # Parentheses
-uv run python -m klmd doc.klmd --xref-template "{number}"           # Number only
-
-# Link control
-uv run python -m klmd doc.klmd --no-xref-links   # Plain text references
-uv run python -m klmd doc.klmd --xref-links      # Clickable links
-```
-
-**CLI to Configuration Mapping:**
-- `--xref-template "§{number}"` → `CrossReferenceConfig(template="§{number}")`
-- `--xref-links` → `CrossReferenceConfig(generate_links=True)`
-
-### Comment Handling CLI Options
-
-Control how comments are rendered in the output:
-
-```bash
---comments STYLE            # Comment rendering style
-
-# Style options: exclude, blockquote, html
-uv run python -m klmd doc.klmd --comments exclude     # Remove comments (default)
-uv run python -m klmd doc.klmd --comments blockquote  # Render as > blockquotes
-uv run python -m klmd doc.klmd --comments html        # Render as <!-- HTML comments -->
-```
-
-**CLI to Configuration Mapping:**
-- `--comments blockquote` → `MarkdownConfig(include_comments=CommentStyle.BLOCKQUOTE)`
-
-### Configuration File Usage
-
-For complex configurations, use YAML or JSON files:
-
-```bash
-# Load configuration from file
-uv run python -m klmd document.klmd -c config.yaml
-uv run python -m klmd document.klmd -c config.json
-
-# CLI options override config file settings
-uv run python -m klmd doc.klmd -c config.yaml --terms code  # CLI --terms overrides file
-```
-
-**Example CLI-equivalent config.yaml:**
-```yaml
-# Equivalent to: -p legal --terms code --comments blockquote --xref-template "§{number}"
-section_numbering:
-  preset: legal
-attachment_numbering:
-  preset: letters
-defined_terms: code
-cross_references:
-  template: "§{number}"
-  links: true
-comments: blockquote
-```
-
-### Debugging and Validation CLI Options
-
-Development and troubleshooting options:
-
-```bash
---validate                  # Parse and validate only, no output
--v, --verbose              # Show progress information
---debug                    # Show AST and configuration details
-
-# Validation examples
-uv run python -m klmd --validate document.klmd              # Check syntax only
-uv run python -m klmd document.klmd -v                      # Show progress
-uv run python -m klmd document.klmd --debug                 # Full debug info
-```
-
-### Complete CLI Examples
-
-#### Legal Document with Custom Formatting
-```bash
-uv run python -m klmd contract.klmd \
-  -p legal \
-  --terms bold \
-  --comments exclude \
-  --xref-template "Section {number}" \
-  --xref-links \
-  -o contract.md
-```
-
-#### Technical Manual with Decimal Numbering
-```bash
-uv run python -m klmd manual.klmd \
-  -p decimal \
-  --section-style-1 bold \
-  --section-style-2 italic \
-  --terms code \
-  --comments blockquote \
-  -o manual.md
-```
-
-#### Using Configuration File with CLI Overrides
-```bash
-# Use base config but override specific options
-uv run python -m klmd document.klmd \
-  -c legal-config.yaml \
-  --terms code \
-  --comments html \
-  -v
-```
-
-### Option Precedence
-
-Configuration is applied in this order (later options override earlier ones):
-
-1. **Default values** from `MarkdownConfig()`
-2. **Configuration file** settings (if specified with `-c`)
-3. **CLI arguments** (highest priority)
-
-This allows you to set up base configurations in files and override specific options as needed via command line arguments.
-
-## Implementation Notes
-
-Key requirements for the renderer implementation:
-
-1. **Two-phase processing**: First pass assigns numbers to all sections and attachments, second pass renders with resolved cross-references
-2. **AST traversal**: Process document tree depth-first to maintain proper hierarchical numbering
-3. **Title normalization**: Convert section titles to anchor IDs using lowercase and hyphens for cross-reference targets
-4. **Error handling**: Gracefully handle missing cross-reference targets and malformed signature blocks
-5. **Markdown compliance**: Generate valid CommonMark output that renders correctly in standard markdown processors
-
+1. **First pass (NumberingResolver)**: Traverse the AST to assign numbers to all sections and attachments, and build the cross-reference mapping
+2. **Second pass (MarkdownRenderer)**: Render each node with resolved numbering and cross-references
+3. **Title normalization**: Section titles are converted to anchor IDs using lowercase and hyphens
+4. **Output**: Valid CommonMark that renders correctly in standard markdown processors

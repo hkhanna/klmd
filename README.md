@@ -7,11 +7,11 @@ The Khanna Law Markdown (KLMD) specification provides a lightweight, human-reada
 
 ### Why KLMD?
 
-For most lawyers, Microsoft Word remains the default tool. Not because it’s pleasant to use, but because it handles things that plain text traditionally can’t, like:
+For most lawyers, Microsoft Word remains the default tool. Not because it's pleasant to use, but because it handles things that plain text traditionally can't, like:
 
-- **Automatic multi-level numbering** that updates when sections are reorganized  
-- **Live cross-references** that always reference the right section numbers after edits  
-- **Consistent attachment numbering** for exhibits, schedules, and annexes  
+- **Automatic multi-level numbering** that updates when sections are reorganized
+- **Live cross-references** that always reference the right section numbers after edits
+- **Consistent attachment numbering** for exhibits, schedules, and annexes
 
 Replicating these capabilities in standard Markdown or plain text is tedious and usually not worth the hassle, so lawyers stay in Word, even when it makes version control painful and produces documents that are harder to automate.
 
@@ -21,580 +21,72 @@ Although KLMD was designed to be rendered into Word's docx format, is not bound 
 
 ### Use Cases
 
-- Draft and collaborate entirely in plain text while keeping advanced features like cross-references and automatic section numbering usually reserved for word processors.  
+- Draft and collaborate entirely in plain text while keeping advanced features like cross-references and automatic section numbering usually reserved for word processors.
 - Convert to Word (.docx) for work with other lawyers.
-- Plain text is durable, portable, and well-suited to version control.  
-- Large language models (LLMs) can revise plain-text drafts without dealing with formatting issues or the complexity of Word's docx format.  
+- Plain text is durable, portable, and well-suited to version control.
+- Large language models (LLMs) can revise plain-text drafts without dealing with formatting issues or the complexity of Word's docx format.
 - Combine KLMD with a templating engine like Jinja2 to drive contract generation without needing to write custom extensions for section numbering and cross references.
 
-### Design philosophy
+### Design Philosophy
 
-KLMD’s markup is designed to encode *what* the text is, not *how* it should look. The goal is to capture the semantic structure of a legal document—clauses, sections, references, definitions without prescribing formatting choices such as font size, bolding, or alignment. Those are presentation concerns and should be handled in a separate styling or rendering layer.
+KLMD's markup is designed to encode *what* the text is, not *how* it should look. The goal is to capture the semantic structure of a legal document—clauses, sections, references, definitions without prescribing formatting choices such as font size, bolding, or alignment. Those are presentation concerns and should be handled in a separate styling or rendering layer.
 
-A practical test: if the feature could be expressed as a Word style (e.g., "Heading 2" or "Block Quote"), it’s a presentation element. If it changes the legal meaning or logical structure of the document (e.g., turning a word into a defined term or inserting a cross-reference), it’s content.
+A practical test: if the feature could be expressed as a Word style (e.g., "Heading 2" or "Block Quote"), it's a presentation element. If it changes the legal meaning or logical structure of the document (e.g., turning a word into a defined term or inserting a cross-reference), it's content.
 
 This separation allows KLMD to be rendered in a lawyer's custom style. Fonts, page breaks, numbering style can be customized from lawyer to lawyer to match a firm's style guide.
 
 Another important design choice is to avoid implementing features that templating engines are better suited for. For example, variable substitution is intentionally excluded; use a templating tool like Jinja2 for that.
 
+## Quick Start
 
-## Specification
+### Installation
 
-_The specification is a work in progress._
-
-### 1. Text and paragraphs
-
-KLMD follows standard Markdown conventions for text formatting and paragraph breaks.
-
-#### 1.1. Paragraphs
-
-Consecutive lines of text are joined into a single paragraph. Paragraphs are separated by one or more blank lines.
-
-```markdown
-This is the first paragraph.
-This line is part of the same paragraph.
-
-This is a second paragraph.
+```bash
+uv sync
 ```
 
-**Example rendered output:**
-```
-This is the first paragraph. This line is part of the same paragraph.
+### Example
 
-This is a second paragraph.
-```
-
-This convention allows for natural line wrapping in source documents while maintaining semantic paragraph structure—essential for legal documents where paragraph breaks often have substantive meaning.
-
-### 2. Section numbers
-
-Automatic hierarchical section numbering with optional titles. Square brackets indicate placeholder content that will be replaced with actual numbers during rendering.
-
-#### 2.1. Hierarchical numbering
-
-Section depth is indicated by the number of hash marks. The hash must be the first non-whitespace character on the line, with at least one space after the closing bracket.
-
-```markdown
-[#] This is Section 1.
-   [##] This is Section 1.1.
-      [###] This is Section 1.1.1.
-   [##] This is Section 1.2.
-[#] This is Section 2.
-   [##] This is Section 2.1.
-```
-
-**Example rendered output:**
-```
-1. This is Section 1.
-   1.1. This is Section 1.1.
-      1.1.1. This is Section 1.1.1.
-   1.2. This is Section 1.2.
-2. This is Section 2.
-   2.1. This is Section 2.1.
-```
-
-Note: Indentation is optional and has no effect on numbering—it's purely for readability in the source.
-
-#### 2.2. Section titles
-
-Titles appear within the square brackets after the hash marks. Renderers typically format these in bold or underlined.
-
-```markdown
-[# Definitions] The following terms shall have the meanings set forth below.
-[##] "Agreement" means this Master Services Agreement.
-[##] "Services" means the services described in each Statement of Work.
-[# Payment Terms] Client shall pay all fees within thirty (30) days.
-[## Late Payments] Interest accrues at 1.5% per month on overdue amounts.
-```
-
-**Example rendered output:**
-```
-1. Definitions. The following terms shall have the meanings set forth below.
-   1.1. "Agreement" means this Master Services Agreement.
-   1.2. "Services" means the services described in each Statement of Work.
-2. Payment Terms. Client shall pay all fees within thirty (30) days.
-   2.1. Late Payments. Interest accrues at 1.5% per month on overdue amounts.
-```
-
-### 3. Document and attachment titles
-
-Titles for main documents or attachments, marked by a line of equal signs. Renderers typically center the titles and add page breaks before these titles (except at document start).
-
-**Syntax:** Title text followed by a line of at least 3 equal signs.
+Given a KLMD source file:
 
 ```markdown
 Master Services Agreement
 =========================
 
-This Agreement is entered into as of [DATE] by and between...
-
-[Later in document...]
-
-Statement of Work
-=================
-
-The Vendor shall provide the following services...
-```
-
-**Common use cases:**
-- Main agreement titles
-- Exhibit or schedule titles within a document
-- Appendix titles
-- Standalone document titles
-
-### 4. Attachment numbering
-
-Automatic lettering for exhibits, schedules, and appendices. Note that section numbering resets within each attachment.
-
-#### 4.1. Basic attachment
-
-```markdown
-Exhibit [#]
-===========
-
-[#] Scope of Work. The Consultant shall...
-[#] Deliverables. The following deliverables...
-```
-
-**Rendered output:**
-```
-Exhibit A
-
-1. Scope of Work. The Consultant shall...
-2. Deliverables. The following deliverables...
-```
-
-#### 4.2. Attachment with title
-
-```markdown
-Schedule [# Pricing Terms]
-==========================
-
-[#] Base Fees. Monthly retainer of...
-[#] Additional Services. Hourly rates...
-```
-
-**Example rendered output:**
-```
-Schedule A
-Pricing Terms
-
-1. Base Fees. Monthly retainer of...
-2. Additional Services. Hourly rates...
-```
-
-**Notes:**
-- Renderers may support alternate schemes (numbers, Roman numerals)
-
-### 5. Cross references
-
-Automatically updated references to sections, exhibits, or other numbered elements by their title.
-
-#### 5.1. Syntax
-
-- Format: `[#title-with-dashes]`
-- Replace spaces with hyphens
-- Case-insensitive matching
-- No whitespace inside brackets
-
-#### 5.2. Examples
-
-```markdown
-[# Confidentiality] Each party shall maintain strict confidentiality...
-[# Payment Terms] Payment is due within 30 days...
-[# Termination] Either party may terminate...
-
-The confidentiality obligations in [#confidentiality] shall survive termination.
-Subject to [#payment-terms], all fees are non-refundable.
-Termination procedures are detailed in [#termination].
-```
-
-**Example rendered output:**
-```
-The confidentiality obligations in Section 1 shall survive termination.
-Subject to Section 2, all fees are non-refundable.
-Termination procedures are detailed in Section 3.
-```
-
-#### 5.3. Attachment references
-
-```markdown
-See Exhibit [#statement-of-work] for project details.
-Pricing is set forth in Schedule [#pricing-terms].
-```
-
-#### 5.4. Error handling
-
-- **Duplicate titles**: Parser throws error when multiple sections share the same title
-- **Missing references**: Parser warns when referenced title doesn't exist
-- **Case variations**: Both `[#payment-terms]` and `[#Payment-Terms]` resolve to the same section
-
-
-### 6. Defined terms
-
-Legal documents often define parties, concepts, or other phrases for later reuse. KLMD marks such definitions with a short inline construct that is readable in plain text yet recognizable by software.
-
-A Defined-Term Introduction (DTI) appears inside parentheses, starts with the keyword `defined as`, and binds a quoted term to text that normally precedes it (the referent).
-
-A renderer MUST NOT display the words `defined as` in the final output.
-
-#### 6.1. Syntax
-
-```markdown
-( ... defined as <descriptor> "term" ... )
-```
-- **descriptor** (optional): a single word article or qualifier (e.g., `the`, `a`, `any`, `this`)
-- **"term"**: the defined term, enclosed in straight ASCII double quotes
-- whitespace: at least one space MUST appear after `defined as` and after any descriptor
-
-Multiple DTIs MAY appear inside a single pair of parentheses.
-
-#### 6.2. Example
-
-```markdown
-This Agreement is by and between Joe Smith (defined as "Joe") and Big Company LLC (defined as the "Company" and, together with Joe, defined as the "Parties").
-```
-
-This example introduces three defined terms: **Joe**, **Company**, and **Parties**.
-
-#### 6.3. Processing notes
-
-- **Uniqueness**: Each term MUST be unique within the document. Redefinition SHOULD raise a warning
-- **Escaping**: Prefix `defined as` with a backslash to prevent parsing as a DTI. The backslash is removed during rendering:
-```markdown
-This is a test (this is \defined as "for example").
-```
-- **Referent identification**: Not yet standardized. Parsers MAY assume the referent is the text immediately preceding the opening parenthesis until a future revision specifies an explicit rule
-
-### 7. Comments
-
-KLMD supports inline annotations and comments that can be included during drafting but may be excluded from final output. Comments use C-style syntax familiar to many users.
-
-#### 7.1. Line comments
-
-Line comments start with `//` and continue to the end of the line. These are useful for notes, reminders, or section-level annotations.
-
-```markdown
-// This is a line comment
-[# Payment Terms] Payment is due within 30 days.
-// Note: Check with client about net-30 vs net-45
-
-[# Termination] Either party may terminate this Agreement.
-// Need to add notice period requirements
-```
-
-#### 7.2. Block and inline comments
-
-Block comments are enclosed in `/*` and `*/` and can span multiple lines or appear inline within text. These are useful for detailed notes or inline clarifications.
-
-**Inline usage:**
-```markdown
-The Vendor /*ABC Corp or subsidiary*/ shall deliver by /*confirm date*/ December 31.
-
-Payment of /*$10,000 or $15,000?*/ shall be made within thirty days.
-```
-
-**Multi-line usage:**
-```markdown
-/* 
-Multi-line comment for longer discussions:
-- Need to verify payment terms with finance
-- Check currency for international transactions  
-- Consider late payment penalties
-*/
-
-[# Warranties] The Vendor warrants that...
-```
-
-#### 7.3. Processing notes
-
-- **Rendering flexibility**: Comments may be completely omitted, converted to marginal notes, or transformed into document comments depending on the output format
-- **Placement**: Comments can appear anywhere in the document - before titles, within sections, or inline within paragraphs
-- **Nesting**: Block comments (`/* */`) cannot be nested within each other
-
-### 8. Signature blocks
-
-Legal documents require signature blocks that identify the signing parties and their capacity. KLMD provides structured syntax for both individual and entity signatures, including nested entity relationships.
-
-#### 8.1. Syntax
-
-Signature blocks are delimited by horizontal rules with at least three dashes, preceded by a blank line. The party name appears immediately after the horizontal rule, followed by optional metadata fields. The `By:` metadata field has special meaning described below and is case insensitive.
-
-Indentation within signature blocks is optional and ignored by the parser—it serves only to improve readability in the source document.
-
-```markdown
-
--------------------
-Party Name
-Field Name: Field Value
-Another Field: Another Value
-```
-
-#### 8.2. Individual signatures
-
-Individual signatories require no additional fields beyond the party name. Individual signatories MUST NOT have a `By:` field.
-
-```markdown
-
--------------------
-John Smith
-
--------------------
-Jane Doe
-Address: 123 Main Street, New York, NY 10001
-Email: jane@example.com
-```
-
-#### 8.3. Entity signatures
-
-Entity signatures are identified by the presence of a `By:` field, which specifies the human signatory acting on behalf of the entity. Entity signatures MUST contain at least the `By:` field.
-
-```markdown
-
--------------------
-ABC Corporation
-By: John Smith
-Title: Chief Executive Officer
-
--------------------
-XYZ LLC
-By: Jane Doe
-Title: Managing Member
-Entity Type: Delaware limited liability company
-Address: 456 Corporate Boulevard, Wilmington, DE 19801
-```
-
-#### 8.4. Nested entity signatures
-
-When an entity signs on behalf of another entity, use multiple `By Entity:` fields to establish the chain of authority. Only one `By:` field is permitted per signature block, identifying the ultimate human signatory.
-
-```markdown
-
--------------------
-Investment Fund LP
-  By Entity: ABC Management LLC, its General Partner
-    By Entity: XYZ Holdings Inc., its Managing Member
-      By: John Smith
-      Title: President
-Address: 789 Finance Street, New York, NY 10005
-
--------------------
-Subsidiary Corp
-By Entity: Parent LLC, its sole member
-  By: Jane Doe  
-  Title: Manager
-Phone: (555) 123-4567
-```
-
-The indentation in the above example is optional and purely for readability—both indented and non-indented versions are parsed identically:
-
-#### 8.5. Processing notes
-
-- **Entity detection**: A signature block is treated as an entity signature if it contains a `By:` field
-- **Required fields**: Entity signatures must contain at least one field; individual signatures may have zero fields
-- **Field flexibility**: Any field names may be used beyond the specified `By:` and `By Entity:` fields
-- **Chain validation**: Each `By Entity:` field should specify the relationship (e.g., "its General Partner", "its Managing Member")
-- **Single human signatory**: Only one `By:` field is permitted per signature block
-
-
-## Usage
-
-KLMD can be used both as a command-line tool and as a Python library for programmatic document processing.
-
-### Installation
-
-```bash
-# Install dependencies and sync environment
-uv sync
-```
-
-### Programmatic Usage
-
-Use KLMD as a library in your Python code:
-
-```python
-from klmd.parser import KLMDParser
-from klmd.renderers.markdown import (
-    MarkdownRenderer, 
-    MarkdownConfig, 
-    NumberingScheme,
-    TextStyle,
-    CommentStyle
-)
-
-# Parse KLMD text
-parser = KLMDParser()
-document = parser.parse("""
 [# Definitions] The following terms are defined:
 [##] Big Company LLC (defined as the "Company") is the service provider.
-[##] Services means the work described in Attachment [#statement-of-work].
+[##] Services means the work described in Exhibit [#statement-of-work].
 
 [# Payment] Client pays within 30 days of invoice.
 
-Attachment [#]
-==============
+Exhibit [# Statement of Work]
+==============================
 
-Statement of Work goes here.
-""")
-
-# Render with default settings
-renderer = MarkdownRenderer()
-markdown_output = renderer.render(document)
-print(markdown_output)
-
-# Render with custom configuration
-config = MarkdownConfig(
-    section_numbering=NumberingScheme.from_preset("legal"),
-    defined_term_style=TextStyle.CODE,
-    include_comments=CommentStyle.BLOCKQUOTE
-)
-custom_renderer = MarkdownRenderer(config)
-custom_output = custom_renderer.render(document)
+Description of services goes here.
 ```
 
-This approach is ideal for:
-- Integrating KLMD into larger applications
-- Batch processing multiple documents
-- Custom rendering pipelines
-- Template engines (e.g., with Jinja2)
-- API endpoints that generate legal documents
+Parse and render with Python:
 
-#### Advanced Programmatic Examples
-
-**Template Integration with Jinja2:**
 ```python
-from jinja2 import Template
 from klmd.parser import KLMDParser
 from klmd.renderers.markdown import MarkdownRenderer
 
-# KLMD template with Jinja2 variables
-template_text = """
-{{ client_name }} Services Agreement
-{{ "=" * (client_name|length + 18) }}
-
-[# Definitions]
-[##] {{ client_name }} (defined as "Client") shall mean the contracting party.
-[##] Services means {{ service_description }}.
-
-[# Payment] Client pays ${{ amount }} within {{ payment_days }} days.
-"""
-
-# Render template
-template = Template(template_text)
-klmd_text = template.render(
-    client_name="Acme Corp",
-    service_description="software development services",
-    amount="50,000",
-    payment_days=30
-)
-
-# Parse and render to markdown
 parser = KLMDParser()
-document = parser.parse(klmd_text)
+document = parser.parse(open("contract.klmd").read())
+
 renderer = MarkdownRenderer()
-final_output = renderer.render(document)
+print(renderer.render(document))
 ```
 
-**Batch Processing:**
-```python
-import os
-from pathlib import Path
-
-def process_klmd_directory(input_dir: str, output_dir: str):
-    """Convert all KLMD files in a directory to markdown."""
-    parser = KLMDParser()
-    renderer = MarkdownRenderer()
-    
-    for klmd_file in Path(input_dir).glob("*.klmd"):
-        # Parse document
-        with open(klmd_file, 'r') as f:
-            document = parser.parse(f.read())
-        
-        # Render to markdown
-        markdown = renderer.render(document)
-        
-        # Write output
-        output_file = Path(output_dir) / f"{klmd_file.stem}.md"
-        with open(output_file, 'w') as f:
-            f.write(markdown)
-        
-        print(f"Converted {klmd_file} → {output_file}")
-```
-
-### Command-Line Usage
-
-For standalone document conversion, use the CLI:
-
-#### Basic Usage
+Or use the CLI:
 
 ```bash
-# Convert KLMD to markdown (default format)
-uv run python -m klmd document.klmd -o document.md
-
-# Use stdin/stdout for piping
-cat contract.klmd | uv run python -m klmd - > contract.md
-
-# Validate syntax without generating output
-uv run python -m klmd --validate document.klmd
+uv run python -m klmd contract.klmd -o contract.md
 ```
 
-### Quick Formatting Presets
+## Documentation
 
-```bash
-# Legal numbering (1(a)(i)) with standard formatting
-uv run python -m klmd contract.klmd -p legal
-
-# Decimal numbering (1.1.1) for technical documents
-uv run python -m klmd manual.klmd -p decimal
-
-# Outline format (I.A.1.a) for formal documents
-uv run python -m klmd policy.klmd -p outline
-```
-
-### Configuration Files
-
-For complex formatting requirements, use YAML or JSON configuration files:
-
-```bash
-# Using YAML configuration
-uv run python -m klmd document.klmd -c config.yaml
-
-# Using JSON configuration  
-uv run python -m klmd document.klmd -c config.json
-```
-
-**Example config.yaml:**
-```yaml
-section_numbering:
-  preset: legal
-  customize:
-    2:
-      title_style: italic
-      
-defined_terms: bold
-cross_references:
-  template: "Section {number}"
-  links: true
-comments: exclude
-```
-
-### Common Options
-
-```bash
-# Custom defined term styling
-uv run python -m klmd doc.klmd --terms code
-
-# Control comment rendering
-uv run python -m klmd doc.klmd --comments blockquote
-
-# Custom cross-reference format
-uv run python -m klmd doc.klmd --xref-template "§{number}"
-
-# Verbose output with progress information
-uv run python -m klmd doc.klmd -v
-
-# Debug mode with AST information
-uv run python -m klmd doc.klmd --debug
-```
-
-For complete CLI documentation including renderer-specific options, see `docs/renderers/markdown.md`.
+- **[Specification](docs/spec.md)** — KLMD syntax reference (sections, cross-references, defined terms, comments, signature blocks)
+- **[CLI Reference](docs/cli.md)** — Command-line interface options, presets, and configuration files
+- **[Markdown Renderer](docs/renderers/markdown.md)** — Renderer configuration, Python API, and output examples
+- **[Future Work](FUTURE.md)** — Planned features not yet specified or implemented

@@ -2,6 +2,8 @@
 
 Complete reference for the KLMD command-line interface.
 
+For KLMD syntax details, see the [Specification](spec.md). For renderer-specific configuration and Python API usage, see the [Markdown Renderer](renderers/markdown.md).
+
 ## Synopsis
 
 ```bash
@@ -293,11 +295,8 @@ clean:
     done
 ```
 
-## Renderer-Specific Documentation
+## Related Documentation
 
-For detailed information about renderer-specific configuration options:
-
-- **Markdown Renderer**: See `docs/renderers/markdown.md`
-- **HTML Renderer**: See `docs/renderers/html.md` (future)
-- **DOCX Renderer**: See `docs/renderers/docx.md` (future)
-- **PDF Renderer**: See `docs/renderers/pdf.md` (future)
+- **[Specification](spec.md)** — KLMD syntax reference
+- **[Markdown Renderer](renderers/markdown.md)** — Renderer configuration, Python API, and output examples
+- Future renderers: HTML, DOCX, PDF
