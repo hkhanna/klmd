@@ -50,7 +50,7 @@ Titles appear within the square brackets after the hash marks.
 [## Late Payments] Interest accrues at 1.5% per month on overdue amounts.
 ```
 
-**Renderer options:** [Markdown](renderers/markdown.md#section-numbering)
+**Renderer options:** [Docx](renderers/docx.md#templates), [Markdown](renderers/markdown.md#section-numbering)
 
 ## 3. Document and Attachment Titles
 
@@ -78,7 +78,7 @@ The Vendor shall provide the following services...
 - Appendix titles
 - Standalone document titles
 
-**Renderer options:** [Markdown](renderers/markdown.md#document-and-attachment-titles)
+**Renderer options:** [Docx](renderers/docx.md#templates), [Markdown](renderers/markdown.md#document-and-attachment-titles)
 
 ## 4. Attachment Numbering
 
@@ -107,7 +107,7 @@ Schedule [# Pricing Terms]
 **Notes:**
 - Renderers may support alternate schemes (numbers, Roman numerals)
 
-**Renderer options:** [Markdown](renderers/markdown.md#attachment-numbering)
+**Renderer options:** [Docx](renderers/docx.md#templates), [Markdown](renderers/markdown.md#attachment-numbering)
 
 ## 5. Cross References
 
@@ -145,7 +145,7 @@ Pricing is set forth in Schedule [#pricing-terms].
 - **Missing references**: Parser warns when referenced title doesn't exist
 - **Case variations**: Both `[#payment-terms]` and `[#Payment-Terms]` resolve to the same section
 
-**Renderer options:** [Markdown](renderers/markdown.md#cross-references)
+**Renderer options:** [Docx](renderers/docx.md#cross-references), [Markdown](renderers/markdown.md#cross-references)
 
 ## 6. Defined Terms
 
@@ -183,7 +183,7 @@ This is a test (this is \defined as "for example").
 ```
 - **Referent identification**: Not yet standardized. Parsers MAY assume the referent is the text immediately preceding the opening parenthesis until a future revision specifies an explicit rule
 
-**Renderer options:** [Markdown](renderers/markdown.md#defined-terms)
+**Renderer options:** [Docx](renderers/docx.md#configuration-options), [Markdown](renderers/markdown.md#defined-terms)
 
 ## 7. Comments
 
@@ -227,11 +227,9 @@ Multi-line comment for longer discussions:
 
 ### 7.3. Processing notes
 
-- **Rendering flexibility**: Comments may be completely omitted, converted to marginal notes, or transformed into document comments depending on the output format
+- **Author-only content**: Comments are for KLMD authors during drafting and are not included in rendered output
 - **Placement**: Comments can appear anywhere in the document - before titles, within sections, or inline within paragraphs
 - **Nesting**: Block comments (`/* */`) cannot be nested within each other
-
-**Renderer options:** [Markdown](renderers/markdown.md#comments)
 
 ## 8. Signature Blocks
 
@@ -317,4 +315,4 @@ The indentation in the above example is optional and purely for readability—bo
 - **Chain validation**: Each `By Entity:` field should specify the relationship (e.g., "its General Partner", "its Managing Member")
 - **Single human signatory**: Only one `By:` field is permitted per signature block
 
-**Renderer options:** [Markdown](renderers/markdown.md#signature-blocks)
+**Renderer options:** [Docx](renderers/docx.md#signature-blocks), [Markdown](renderers/markdown.md#signature-blocks)
