@@ -1,25 +1,13 @@
 # Docx Renderer
 
-The docx renderer converts KLMD documents to Microsoft Word format (.docx). It supports Word templates for custom styling and generates working internal hyperlinks for cross-references.
+The docx renderer converts KLMD documents to Microsoft Word format (.docx). A Word template is required and controls all styling, including fonts, spacing, and numbering.
 
 ## CLI Usage
 
-Basic conversion:
-
-```bash
-klmd document.klmd -f docx -o document.docx
-```
-
-With a template:
+Basic conversion (template required):
 
 ```bash
 klmd document.klmd -f docx --template firm-style.docx -o document.docx
-```
-
-With numbering presets:
-
-```bash
-klmd document.klmd -f docx -p legal -o document.docx
 ```
 
 ## Python API
@@ -27,13 +15,16 @@ klmd document.klmd -f docx -p legal -o document.docx
 ### Basic Usage
 
 ```python
+from pathlib import Path
 from klmd.parser import KLMDParser
 from klmd.renderers.docx import DocxRenderer
+from klmd.renderers.docx_config import DocxConfig
 
 parser = KLMDParser()
 document = parser.parse(open("contract.klmd").read())
 
-renderer = DocxRenderer()
+config = DocxConfig(template_path=Path("template.docx"))
+renderer = DocxRenderer(config)
 with open("contract.docx", "wb") as f:
     f.write(renderer.render(document))
 ```
@@ -44,14 +35,12 @@ with open("contract.docx", "wb") as f:
 from pathlib import Path
 from klmd.renderers.docx import DocxRenderer
 from klmd.renderers.docx_config import DocxConfig, StyleMapping
-from klmd.renderers.markdown import NumberingScheme
 
 config = DocxConfig(
     template_path=Path("template.docx"),
-    section_numbering=NumberingScheme.from_preset("legal"),
-    cross_ref_template="Clause {number}",
     defined_term_bold=True,
     uppercase_entity_names=True,
+    generate_hyperlinks=True,
 )
 
 renderer = DocxRenderer(config)
@@ -64,14 +53,10 @@ output_bytes = renderer.render(document)
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `template_path` | `Path \| None` | `None` | Word template file for styling |
+| `template_path` | `Path` | (required) | Word template file for styling |
 | `paragraph_styles` | `StyleMapping` | (see below) | Maps AST nodes to Word styles |
-| `section_numbering` | `NumberingScheme` | `"decimal"` | Section numbering format |
-| `attachment_numbering` | `NumberingScheme` | `"letters"` | Attachment numbering format |
-| `cross_ref_template` | `str` | `"Section {number}"` | Template for cross-reference text |
 | `generate_bookmarks` | `bool` | `True` | Create Word bookmarks for sections |
 | `generate_hyperlinks` | `bool` | `True` | Make cross-references clickable |
-| `include_comments` | `bool` | `False` | Include KLMD comments in output |
 | `defined_term_bold` | `bool` | `True` | Bold defined terms |
 | `uppercase_entity_names` | `bool` | `True` | Uppercase entity names in signatures |
 
@@ -93,7 +78,6 @@ The `StyleMapping` class maps KLMD elements to Word paragraph styles:
 | `signature_party_name` | `"Normal"` | Party names in signature blocks |
 | `signature_line` | `"Normal"` | Signature lines |
 | `signature_field` | `"Normal"` | Signature metadata fields |
-| `comment_text` | `"Quote"` | Comments (when included) |
 
 Custom style mapping:
 
@@ -107,19 +91,31 @@ styles = StyleMapping(
     paragraph="Body Text",
 )
 
-config = DocxConfig(paragraph_styles=styles)
+config = DocxConfig(
+    template_path=Path("template.docx"),
+    paragraph_styles=styles,
+)
 ```
 
 ## Templates
 
-Templates let you control the visual appearance of generated documents. The renderer applies Word styles to content, so your template defines how those styles look.
+Templates control the visual appearance of generated documents. The renderer applies Word styles to content, so your template defines how those styles look.
 
 ### Creating a Template
 
 1. Create a new Word document
 2. Define styles (Title, Heading 1, Heading 2, Normal, etc.)
 3. Set fonts, sizes, spacing, and other formatting for each style
-4. Save as `.docx` or `.dotx`
+4. **For automatic numbering**: Configure heading styles with Word's multilevel list numbering
+5. Save as `.docx` or `.dotx`
+
+### Numbering
+
+The renderer does not generate section numbers. Instead, numbering is controlled by the template:
+
+- If your template's Heading 1, Heading 2, etc. styles are linked to a multilevel list, Word applies numbering automatically
+- This gives you full control over numbering format (1., 1.1 vs Article I, Section 1(a), etc.)
+- If your template has no numbering defined, sections appear without numbers
 
 ### Using a Template
 
@@ -136,31 +132,15 @@ Or via CLI:
 klmd document.klmd -f docx --template firm-template.docx -o output.docx
 ```
 
-## Numbering Schemes
-
-The renderer supports the same numbering presets as the markdown renderer:
-
-| Preset | Example Output |
-|--------|----------------|
-| `decimal` | 1., 1.1., 1.1.1. |
-| `legal` | 1, 1(a), 1(a)(i) |
-| `outline` | I., A., 1. |
-| `simple` | 1, 2, 3 (no hierarchy) |
-| `alpha_parens` | (a), (a)(i), (a)(i)(1) |
-| `letters` | A, B, C (for attachments) |
-
-```python
-from klmd.renderers.markdown import NumberingScheme
-
-config = DocxConfig(
-    section_numbering=NumberingScheme.from_preset("legal"),
-    attachment_numbering=NumberingScheme.from_preset("letters"),
-)
-```
-
 ## Cross-References
 
-Cross-references are rendered as clickable hyperlinks that navigate to bookmarks within the document.
+Cross-references are rendered as the title text with optional hyperlinks to bookmarks within the document.
+
+### How It Works
+
+1. The renderer collects all titles (document title, section titles, attachment titles/subtitles)
+2. Cross-references like `[#definitions]` resolve to the matching title text ("Definitions")
+3. If hyperlinks are enabled, the text links to a bookmark at that section
 
 ### Bookmark Generation
 
@@ -171,25 +151,11 @@ Bookmarks are created for:
 
 Bookmark names are normalized: lowercase, spaces become underscores, special characters removed, truncated to 40 characters.
 
-### Hyperlink Format
-
-The `cross_ref_template` option controls how cross-references appear:
-
-```python
-# Default: "Section 1"
-config = DocxConfig(cross_ref_template="Section {number}")
-
-# Alternative: "Clause 1"
-config = DocxConfig(cross_ref_template="Clause {number}")
-
-# Minimal: just the number
-config = DocxConfig(cross_ref_template="{number}")
-```
-
 ### Disabling Links
 
 ```python
 config = DocxConfig(
+    template_path=Path("template.docx"),
     generate_bookmarks=False,  # No bookmarks
     generate_hyperlinks=False,  # Plain text cross-references
 )
@@ -214,16 +180,7 @@ Signature blocks are rendered as a series of paragraphs:
 
 ```python
 config = DocxConfig(
+    template_path=Path("template.docx"),
     uppercase_entity_names=True,  # "ACME CORP" vs "Acme Corp"
 )
 ```
-
-## Comments
-
-KLMD comments are excluded from output by default. To include them:
-
-```python
-config = DocxConfig(include_comments=True)
-```
-
-When included, standalone comments use the `comment_text` style (default: "Quote"), and inline comments appear in brackets: `[comment text]`.

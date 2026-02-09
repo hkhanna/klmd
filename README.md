@@ -74,24 +74,23 @@ Description of services goes here.
 Convert to Word:
 
 ```bash
-klmd contract.klmd -f docx -o contract.docx
-```
-
-The output is a properly formatted Word document with:
-- Automatic section numbering (1. Definitions, 1.1, 1.2, 2. Payment)
-- Working cross-references (Exhibit A instead of `[#statement-of-work]`)
-- Defined terms in bold
-- Internal hyperlinks for cross-references
-
-### Using Templates
-
-Apply your firm's styling by providing a Word template:
-
-```bash
 klmd contract.klmd -f docx --template firm-style.docx -o contract.docx
 ```
 
-The renderer maps KLMD elements to Word styles (Title, Heading 1, Normal, etc.), so your template controls fonts, spacing, and formatting.
+The output is a properly formatted Word document with:
+- Section titles styled according to your template
+- Working cross-references with internal hyperlinks
+- Defined terms in bold
+
+### Templates
+
+A Word template is required for docx output. The template controls all formatting:
+
+- **Styles**: The renderer maps KLMD elements to Word styles (Title, Heading 1, Normal, etc.)
+- **Numbering**: If your template's heading styles have numbering defined, Word applies it automatically
+- **Fonts & spacing**: All controlled by the template
+
+Create a template by defining styles in Word, then save it as `.docx` or `.dotx`.
 
 ### Python API
 

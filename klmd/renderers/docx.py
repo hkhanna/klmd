@@ -1,8 +1,9 @@
 """
 KLMD Docx Renderer
 
-Converts KLMD AST to Word docx format with configurable styling.
-Uses python-docx for document generation and supports Word templates.
+Converts KLMD AST to Word docx format with template-based styling.
+Uses python-docx for document generation. A Word template is required
+and controls all formatting including any numbering.
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 from ..parser import (
-    CommentNode,
     CrossReferenceNode,
     DefinedTermNode,
     DocumentNode,
@@ -29,35 +29,48 @@ from ..parser import (
     TitleNode,
 )
 from .docx_config import DocxConfig
-from .markdown import MarkdownConfig, NumberingResolver
 
 if TYPE_CHECKING:
     from docx.document import Document as DocumentType
 
 
+class TitleRegistry:
+    """Tracks titles for cross-reference resolution."""
+
+    def __init__(self) -> None:
+        self.titles: dict[str, str] = {}  # normalized key -> original title
+
+    def register(self, title: str) -> None:
+        """Register a title for cross-reference lookup."""
+        key = self._normalize(title)
+        if key not in self.titles:
+            self.titles[key] = title
+
+    def get(self, reference_key: str) -> str | None:
+        """Look up title by reference key."""
+        return self.titles.get(reference_key)
+
+    def _normalize(self, title: str) -> str:
+        """Normalize title for lookup."""
+        return title.lower().replace(" ", "-")
+
+
 class DocxRenderer:
     """Main docx renderer class."""
 
-    def __init__(self, config: DocxConfig | None = None) -> None:
-        self.config = config or DocxConfig()
+    def __init__(self, config: DocxConfig) -> None:
+        self.config = config
         self._document: DocumentType | None = None
-        self._resolver: NumberingResolver | None = None
+        self._title_registry: TitleRegistry | None = None
 
     def render(self, document: DocumentNode) -> bytes:
         """Render document to docx bytes."""
-        # Phase 1: Resolve numbering (reuse NumberingResolver from markdown)
-        md_config = MarkdownConfig(
-            section_numbering=self.config.section_numbering,
-            attachment_numbering=self.config.attachment_numbering,
-        )
-        self._resolver = NumberingResolver(md_config)
-        self._resolver.resolve(document)
+        # Phase 1: Collect all titles for cross-reference resolution
+        self._title_registry = TitleRegistry()
+        self._collect_titles(document)
 
-        # Load template or create blank document
-        if self.config.template_path:
-            self._document = Document(str(self.config.template_path))
-        else:
-            self._document = Document()
+        # Load template
+        self._document = Document(str(self.config.template_path))
 
         # Phase 2: Render nodes
         for child in document.children:
@@ -67,6 +80,24 @@ class DocxRenderer:
         buffer = BytesIO()
         self._document.save(buffer)
         return buffer.getvalue()
+
+    def _collect_titles(self, node: Node) -> None:
+        """Recursively collect all titles for cross-reference resolution."""
+        assert self._title_registry is not None
+
+        if isinstance(node, TitleNode):
+            if node.title:
+                self._title_registry.register(node.title)
+            if node.subtitle:
+                self._title_registry.register(node.subtitle)
+        elif isinstance(node, SectionNode):
+            if node.title:
+                self._title_registry.register(node.title)
+
+        # Recurse into children
+        if hasattr(node, "children"):
+            for child in node.children:
+                self._collect_titles(child)
 
     def _render_node(self, node: Node) -> None:
         """Render a single node to the document."""
@@ -78,24 +109,19 @@ class DocxRenderer:
             self._render_paragraph(node)
         elif isinstance(node, SignatureBlockNode):
             self._render_signature_block(node)
-        elif isinstance(node, CommentNode):
-            self._render_comment(node)
-        # TextNode, DefinedTermNode, CrossReferenceNode are handled inline
+        # TextNode, DefinedTermNode, CrossReferenceNode handled inline
+        # CommentNode intentionally ignored - comments are for authors only
 
     def _render_title(self, node: TitleNode) -> None:
         """Render a title node."""
         assert self._document is not None
-        assert self._resolver is not None
 
         styles = self.config.paragraph_styles
 
         if node.has_attachment_placeholder:
-            # Attachment title with number
-            number = self._resolver.attachment_numbers[id(node)]
-            title_text = f"{node.title} {number}"
-
+            # Attachment title
             paragraph = self._document.add_paragraph(style=styles.attachment_title)
-            paragraph.add_run(title_text)
+            paragraph.add_run(node.title)
 
             # Add bookmark for cross-references
             if self.config.generate_bookmarks:
@@ -127,38 +153,22 @@ class DocxRenderer:
     def _render_section(self, node: SectionNode) -> None:
         """Render a section node."""
         assert self._document is not None
-        assert self._resolver is not None
 
-        number = self._resolver.section_numbers[id(node)]
         style = self.config.paragraph_styles.get_section_style(node.level)
 
-        # Build section heading text
+        # Section heading is just the title (template handles numbering if any)
         if node.title:
-            # Don't add extra period if number already has suffix
-            if number.endswith(".") or number.endswith(")"):
-                heading_text = f"{number} {node.title}"
-            else:
-                heading_text = f"{number}. {node.title}"
-        else:
-            # Section without title
-            if number.endswith(".") or number.endswith(")"):
-                heading_text = number
-            else:
-                heading_text = f"{number}."
+            paragraph = self._document.add_paragraph(style=style)
+            paragraph.add_run(node.title)
 
-        paragraph = self._document.add_paragraph(style=style)
-        paragraph.add_run(heading_text)
-
-        # Add bookmark for titled sections
-        if node.title and self.config.generate_bookmarks:
-            self._add_bookmark_to_paragraph(paragraph, node.title)
+            # Add bookmark for cross-references
+            if self.config.generate_bookmarks:
+                self._add_bookmark_to_paragraph(paragraph, node.title)
 
         # Render section content - collect inline children together
         inline_runs: list[Node] = []
         for child in node.children:
-            if isinstance(
-                child, TextNode | DefinedTermNode | CrossReferenceNode | CommentNode
-            ):
+            if isinstance(child, TextNode | DefinedTermNode | CrossReferenceNode):
                 inline_runs.append(child)
             else:
                 # Flush inline runs as a paragraph first
@@ -198,8 +208,7 @@ class DocxRenderer:
             self._render_defined_term(node, paragraph)
         elif isinstance(node, CrossReferenceNode):
             self._render_cross_reference(node, paragraph)
-        elif isinstance(node, CommentNode) and self.config.include_comments:
-            paragraph.add_run(f"[{node.content}]")
+        # CommentNode intentionally ignored - comments are for authors only
 
     def _render_defined_term(
         self, node: DefinedTermNode, paragraph: Paragraph
@@ -220,42 +229,21 @@ class DocxRenderer:
         self, node: CrossReferenceNode, paragraph: Paragraph
     ) -> None:
         """Render a cross-reference inline."""
-        assert self._resolver is not None
+        assert self._title_registry is not None
 
-        # Look up number
-        number = self._resolver.title_to_number.get(node.reference_key)
+        # Look up the original title
+        title = self._title_registry.get(node.reference_key)
 
-        if number is None:
+        if title is None:
             # Missing reference - render original text
             paragraph.add_run(node.original_text)
             return
 
-        # Strip trailing period from number for cross-references
-        ref_number = number.rstrip(".") if number.endswith(".") else number
-
-        # Apply template
-        ref_text = self.config.cross_ref_template.format(number=ref_number)
-
         if self.config.generate_hyperlinks:
-            anchor = self._resolver.title_to_anchor.get(node.reference_key)
-            if anchor:
-                bookmark_name = self._generate_bookmark_name(anchor)
-                self._add_hyperlink(paragraph, ref_text, bookmark_name)
-                return
-
-        # No hyperlink, just add text
-        paragraph.add_run(ref_text)
-
-    def _render_comment(self, node: CommentNode) -> None:
-        """Render a standalone comment node."""
-        if not self.config.include_comments:
-            return
-
-        assert self._document is not None
-
-        style = self.config.paragraph_styles.comment_text
-        paragraph = self._document.add_paragraph(style=style)
-        paragraph.add_run(node.content)
+            bookmark_name = self._generate_bookmark_name(title)
+            self._add_hyperlink(paragraph, title, bookmark_name)
+        else:
+            paragraph.add_run(title)
 
     def _render_signature_block(self, node: SignatureBlockNode) -> None:
         """Render a signature block."""

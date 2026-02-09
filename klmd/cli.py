@@ -256,72 +256,45 @@ def create_docx_config_from_args(
     args: argparse.Namespace, config_dict: dict[str, Any]
 ) -> DocxConfig:
     """Create DocxConfig from command line arguments and config file."""
-    config = DocxConfig()
+    # Template is required for docx output
+    if not args.template:
+        raise CLIError("--template is required for docx output")
+
+    template_path = Path(args.template)
+    if not template_path.exists():
+        raise CLIError(f"Template file not found: {args.template}")
+
+    # Start with required template
+    generate_hyperlinks = True
+    generate_bookmarks = True
+    defined_term_bold = True
 
     # Apply config file settings
-    if "section_numbering" in config_dict:
-        section_config = config_dict["section_numbering"]
-        if "preset" in section_config:
-            config.section_numbering = NumberingScheme.from_preset(
-                section_config["preset"]
-            )
-
-    if "attachment_numbering" in config_dict:
-        attach_config = config_dict["attachment_numbering"]
-        if "preset" in attach_config:
-            config.attachment_numbering = NumberingScheme.from_preset(
-                attach_config["preset"]
-            )
-
     if "cross_references" in config_dict:
         xref_config = config_dict["cross_references"]
-        if "template" in xref_config:
-            config.cross_ref_template = xref_config["template"]
         if "links" in xref_config:
-            config.generate_hyperlinks = xref_config["links"]
-            config.generate_bookmarks = xref_config["links"]
-
-    if "comments" in config_dict:
-        config.include_comments = config_dict["comments"] != "exclude"
+            generate_hyperlinks = xref_config["links"]
+            generate_bookmarks = xref_config["links"]
 
     if "defined_terms" in config_dict:
-        config.defined_term_bold = config_dict["defined_terms"] == "bold"
+        defined_term_bold = config_dict["defined_terms"] == "bold"
 
     # Apply command line arguments (these override config file)
-    if args.preset:
-        config.section_numbering = NumberingScheme.from_preset(args.preset)
-
-    if args.section_preset:
-        config.section_numbering = NumberingScheme.from_preset(args.section_preset)
-
-    if args.attachment_preset:
-        config.attachment_numbering = NumberingScheme.from_preset(
-            args.attachment_preset
-        )
-
-    if args.xref_template:
-        config.cross_ref_template = args.xref_template
-
     if args.xref_links:
-        config.generate_hyperlinks = True
-        config.generate_bookmarks = True
+        generate_hyperlinks = True
+        generate_bookmarks = True
     elif args.no_xref_links:
-        config.generate_hyperlinks = False
-
-    if args.comments:
-        config.include_comments = args.comments != "exclude"
+        generate_hyperlinks = False
 
     if args.terms:
-        config.defined_term_bold = args.terms == "bold"
+        defined_term_bold = args.terms == "bold"
 
-    # Template file
-    if args.template:
-        template_path = Path(args.template)
-        if not template_path.exists():
-            raise CLIError(f"Template file not found: {args.template}")
-        config.template_path = template_path
-
-    return config
+    return DocxConfig(
+        template_path=template_path,
+        generate_hyperlinks=generate_hyperlinks,
+        generate_bookmarks=generate_bookmarks,
+        defined_term_bold=defined_term_bold,
+    )
 
 
 def create_config_from_args(
