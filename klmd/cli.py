@@ -18,6 +18,8 @@ except ImportError:
     YAML_AVAILABLE = False
 
 from .parser import KLMDParser
+from .renderers.docx import DocxRenderer
+from .renderers.docx_config import DocxConfig
 from .renderers.markdown import (
     CommentStyle,
     CrossReferenceConfig,
@@ -84,6 +86,12 @@ Examples:
         "-c",
         "--config",
         help="Configuration file (YAML or JSON)",
+    )
+
+    # Template file (for docx output)
+    parser.add_argument(
+        "--template",
+        help="Word template file (.docx or .dotx) for docx output",
     )
 
     # Quick presets
@@ -242,6 +250,78 @@ def comment_style_from_string(style_str: str) -> CommentStyle:
         "html": CommentStyle.HTML_COMMENT,
     }
     return style_map[style_str]
+
+
+def create_docx_config_from_args(
+    args: argparse.Namespace, config_dict: dict[str, Any]
+) -> DocxConfig:
+    """Create DocxConfig from command line arguments and config file."""
+    config = DocxConfig()
+
+    # Apply config file settings
+    if "section_numbering" in config_dict:
+        section_config = config_dict["section_numbering"]
+        if "preset" in section_config:
+            config.section_numbering = NumberingScheme.from_preset(
+                section_config["preset"]
+            )
+
+    if "attachment_numbering" in config_dict:
+        attach_config = config_dict["attachment_numbering"]
+        if "preset" in attach_config:
+            config.attachment_numbering = NumberingScheme.from_preset(
+                attach_config["preset"]
+            )
+
+    if "cross_references" in config_dict:
+        xref_config = config_dict["cross_references"]
+        if "template" in xref_config:
+            config.cross_ref_template = xref_config["template"]
+        if "links" in xref_config:
+            config.generate_hyperlinks = xref_config["links"]
+            config.generate_bookmarks = xref_config["links"]
+
+    if "comments" in config_dict:
+        config.include_comments = config_dict["comments"] != "exclude"
+
+    if "defined_terms" in config_dict:
+        config.defined_term_bold = config_dict["defined_terms"] == "bold"
+
+    # Apply command line arguments (these override config file)
+    if args.preset:
+        config.section_numbering = NumberingScheme.from_preset(args.preset)
+
+    if args.section_preset:
+        config.section_numbering = NumberingScheme.from_preset(args.section_preset)
+
+    if args.attachment_preset:
+        config.attachment_numbering = NumberingScheme.from_preset(
+            args.attachment_preset
+        )
+
+    if args.xref_template:
+        config.cross_ref_template = args.xref_template
+
+    if args.xref_links:
+        config.generate_hyperlinks = True
+        config.generate_bookmarks = True
+    elif args.no_xref_links:
+        config.generate_hyperlinks = False
+
+    if args.comments:
+        config.include_comments = args.comments != "exclude"
+
+    if args.terms:
+        config.defined_term_bold = args.terms == "bold"
+
+    # Template file
+    if args.template:
+        template_path = Path(args.template)
+        if not template_path.exists():
+            raise CLIError(f"Template file not found: {args.template}")
+        config.template_path = template_path
+
+    return config
 
 
 def create_config_from_args(
@@ -435,12 +515,23 @@ def main() -> int:
         if args.format == "markdown":
             renderer = MarkdownRenderer(config)
             output_text = renderer.render(document)
+
+            # Write output
+            with open_output_file(output_file) as f:
+                f.write(output_text)
+
+        elif args.format == "docx":
+            docx_config = create_docx_config_from_args(args, config_dict)
+            docx_renderer = DocxRenderer(docx_config)
+            output_bytes = docx_renderer.render(document)
+
+            if output_file:
+                Path(output_file).write_bytes(output_bytes)
+            else:
+                sys.stdout.buffer.write(output_bytes)
+
         else:
             raise CLIError(f"Format '{args.format}' not yet implemented")
-
-        # Write output
-        with open_output_file(output_file) as f:
-            f.write(output_text)
 
         if args.verbose and output_file:
             print("Conversion completed successfully", file=sys.stderr)

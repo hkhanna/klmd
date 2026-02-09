@@ -42,12 +42,18 @@ Another important design choice is to avoid implementing features that templatin
 ### Installation
 
 ```bash
-uv sync
+pip install klmd
+```
+
+Or with uv:
+
+```bash
+uv add klmd
 ```
 
 ### Example
 
-Given a KLMD source file:
+Given a KLMD source file (`contract.klmd`):
 
 ```markdown
 Master Services Agreement
@@ -65,28 +71,54 @@ Exhibit [# Statement of Work]
 Description of services goes here.
 ```
 
-Parse and render with Python:
+Convert to Word:
+
+```bash
+klmd contract.klmd -f docx -o contract.docx
+```
+
+The output is a properly formatted Word document with:
+- Automatic section numbering (1. Definitions, 1.1, 1.2, 2. Payment)
+- Working cross-references (Exhibit A instead of `[#statement-of-work]`)
+- Defined terms in bold
+- Internal hyperlinks for cross-references
+
+### Using Templates
+
+Apply your firm's styling by providing a Word template:
+
+```bash
+klmd contract.klmd -f docx --template firm-style.docx -o contract.docx
+```
+
+The renderer maps KLMD elements to Word styles (Title, Heading 1, Normal, etc.), so your template controls fonts, spacing, and formatting.
+
+### Python API
 
 ```python
 from klmd.parser import KLMDParser
-from klmd.renderers.markdown import MarkdownRenderer
+from klmd.renderers.docx import DocxRenderer
 
 parser = KLMDParser()
 document = parser.parse(open("contract.klmd").read())
 
-renderer = MarkdownRenderer()
-print(renderer.render(document))
+renderer = DocxRenderer()
+with open("contract.docx", "wb") as f:
+    f.write(renderer.render(document))
 ```
 
-Or use the CLI:
+### Other Formats
+
+Render to Markdown for previewing or version control diffs:
 
 ```bash
-uv run python -m klmd contract.klmd -o contract.md
+klmd contract.klmd -f markdown -o contract.md
 ```
 
 ## Documentation
 
 - **[Specification](docs/spec.md)** — KLMD syntax reference (sections, cross-references, defined terms, comments, signature blocks)
 - **[CLI Reference](docs/cli.md)** — Command-line interface options, presets, and configuration files
-- **[Markdown Renderer](docs/renderers/markdown.md)** — Renderer configuration, Python API, and output examples
+- **[Docx Renderer](docs/renderers/docx.md)** — Word output configuration, templates, and Python API
+- **[Markdown Renderer](docs/renderers/markdown.md)** — Markdown output configuration and examples
 - **[Future Work](FUTURE.md)** — Planned features not yet specified or implemented
